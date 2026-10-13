@@ -28,17 +28,31 @@ export type Sfx =
   | "chat"
   | "out";
 
-let ctx: AudioContext | null = null;
-let master: GainNode;
-let sfxBus: GainNode;
-let musicBus: GainNode;
-let noise: AudioBuffer;
-
-const prefs = {
-  muted: false,
-  sfx: 0.8,
-  music: false,
-};
+/**
+ * One audio engine per page, kept on globalThis so a hot-reloaded copy of this module
+ * reuses it instead of starting a second music loop it can't stop.
+ */
+interface Engine {
+  ctx: AudioContext | null;
+  master: GainNode;
+  sfxBus: GainNode;
+  musicBus: GainNode;
+  noise: AudioBuffer;
+  musicTimer: ReturnType<typeof setInterval> | null;
+  nextBeat: number;
+  step: number;
+  clips: Partial<Record<VoiceLine, AudioBuffer | null>>;
+  prefs: { muted: boolean; sfx: number; music: boolean };
+}
+const E: Engine = ((globalThis as unknown as { __neonoAudio?: Engine }).__neonoAudio ??= {
+  ctx: null,
+  musicTimer: null,
+  nextBeat: 0,
+  step: 0,
+  clips: {},
+  prefs: { muted: false, sfx: 0.8, music: false },
+} as unknown as Engine);
+const prefs = E.prefs;
 
 function loadPrefs() {
   prefs.muted = loadPref("muted", false);
@@ -49,26 +63,26 @@ if (typeof window !== "undefined") loadPrefs();
 
 function ensure(): AudioContext | null {
   if (typeof window === "undefined") return null;
-  if (ctx) return ctx;
+  if (E.ctx) return E.ctx;
   const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   if (!AC) return null;
-  ctx = new AC();
-  const comp = ctx.createDynamicsCompressor();
+  E.ctx = new AC();
+  const comp = E.ctx.createDynamicsCompressor();
   comp.threshold.value = -14;
   comp.ratio.value = 4;
-  master = ctx.createGain();
-  master.gain.value = prefs.muted ? 0 : 1;
-  master.connect(comp).connect(ctx.destination);
-  sfxBus = ctx.createGain();
-  sfxBus.gain.value = prefs.sfx;
-  sfxBus.connect(master);
-  musicBus = ctx.createGain();
-  musicBus.gain.value = 0;
-  musicBus.connect(master);
-  noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-  const d = noise.getChannelData(0);
+  E.master = E.ctx.createGain();
+  E.master.gain.value = prefs.muted ? 0 : 1;
+  E.master.connect(comp).connect(E.ctx.destination);
+  E.sfxBus = E.ctx.createGain();
+  E.sfxBus.gain.value = prefs.sfx;
+  E.sfxBus.connect(E.master);
+  E.musicBus = E.ctx.createGain();
+  E.musicBus.gain.value = 0;
+  E.musicBus.connect(E.master);
+  E.noise = E.ctx.createBuffer(1, E.ctx.sampleRate, E.ctx.sampleRate);
+  const d = E.noise.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-  return ctx;
+  return E.ctx;
 }
 
 /** Call from a click/tap handler so audio is allowed to start. */
@@ -87,8 +101,8 @@ function env(g: GainNode, t: number, a: number, peak: number, dec: number) {
   g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec);
 }
 
-function tone(type: OscillatorType, f0: number, f1: number, t: number, dur: number, peak: number, out: AudioNode = sfxBus, detune = 0) {
-  const c = ctx!;
+function tone(type: OscillatorType, f0: number, f1: number, t: number, dur: number, peak: number, out: AudioNode = E.sfxBus, detune = 0) {
+  const c = E.ctx!;
   const o = c.createOscillator();
   o.type = type;
   o.detune.value = detune;
@@ -101,10 +115,10 @@ function tone(type: OscillatorType, f0: number, f1: number, t: number, dur: numb
   o.stop(t + dur + 0.05);
 }
 
-function hiss(t: number, dur: number, peak: number, type: BiquadFilterType, f0: number, f1 = f0, q = 1.2, out: AudioNode = sfxBus) {
-  const c = ctx!;
+function hiss(t: number, dur: number, peak: number, type: BiquadFilterType, f0: number, f1 = f0, q = 1.2, out: AudioNode = E.sfxBus) {
+  const c = E.ctx!;
   const src = c.createBufferSource();
-  src.buffer = noise;
+  src.buffer = E.noise;
   src.playbackRate.value = 0.8 + Math.random() * 0.4;
   const f = c.createBiquadFilter();
   f.type = type;
@@ -161,8 +175,8 @@ export function playSfx(name: Sfx, delayMs = 0) {
       break;
     case "shout":
       [0, 4, 7].forEach((s) => {
-        tone("sawtooth", N(s + 12), N(s + 12), t, 0.45, 0.07, sfxBus, -8);
-        tone("sawtooth", N(s + 12), N(s + 12), t, 0.45, 0.07, sfxBus, 8);
+        tone("sawtooth", N(s + 12), N(s + 12), t, 0.45, 0.07, E.sfxBus, -8);
+        tone("sawtooth", N(s + 12), N(s + 12), t, 0.45, 0.07, E.sfxBus, 8);
       });
       tone("sine", N(24), N(24), t + 0.05, 0.4, 0.12);
       break;
@@ -208,7 +222,7 @@ export function playSfx(name: Sfx, delayMs = 0) {
 
 export type VoiceLine = "uno" | "caught";
 const VOICE_TEXT: Record<VoiceLine, string> = { uno: "Uno!", caught: "Gotcha!" };
-const clips: Partial<Record<VoiceLine, AudioBuffer | null>> = {};
+const clips = E.clips;
 
 async function loadClip(name: VoiceLine) {
   if (name in clips || !ensure()) return;
@@ -216,7 +230,7 @@ async function loadClip(name: VoiceLine) {
   try {
     const res = await fetch(`/sfx/${name}.mp3`, { cache: "force-cache" });
     if (!res.ok) return;
-    clips[name] = await ctx!.decodeAudioData(await res.arrayBuffer());
+    clips[name] = await E.ctx!.decodeAudioData(await res.arrayBuffer());
   } catch {
     clips[name] = null;
   }
@@ -237,7 +251,7 @@ export function playVoice(name: VoiceLine) {
     src.buffer = buf;
     const g = c.createGain();
     g.gain.value = 1.15;
-    src.connect(g).connect(sfxBus);
+    src.connect(g).connect(E.sfxBus);
     src.start();
     return;
   }
@@ -265,9 +279,6 @@ export function speak(text: string, shout = true) {
 
 // ── generative synthwave loop ──
 
-let musicTimer: ReturnType<typeof setInterval> | null = null;
-let nextBeat = 0;
-let step = 0;
 const BPM = 94;
 const PROG = [
   [9, 12, 16], // Am
@@ -277,19 +288,19 @@ const PROG = [
 ];
 
 function scheduleStep(t: number) {
-  const c = ctx!;
+  const c = E.ctx!;
   const sixteenth = 60 / BPM / 4;
-  const bar = Math.floor(step / 16) % PROG.length;
+  const bar = Math.floor(E.step / 16) % PROG.length;
   const chord = PROG[bar];
-  const s = step % 16;
+  const s = E.step % 16;
   // kick on beats, hat on off-beats
-  if (s % 4 === 0) tone("sine", 120, 40, t, 0.22, 0.5, musicBus);
-  if (s % 4 === 2) hiss(t, 0.04, 0.12, "highpass", 7000, 7000, 0.7, musicBus);
+  if (s % 4 === 0) tone("sine", 120, 40, t, 0.22, 0.5, E.musicBus);
+  if (s % 4 === 2) hiss(t, 0.04, 0.12, "highpass", 7000, 7000, 0.7, E.musicBus);
   // bass
-  if (s % 2 === 0) tone("triangle", N(chord[0] - 24), N(chord[0] - 24), t, sixteenth * 1.8, 0.22, musicBus);
+  if (s % 2 === 0) tone("triangle", N(chord[0] - 24), N(chord[0] - 24), t, sixteenth * 1.8, 0.22, E.musicBus);
   // arp
-  const note = chord[(step >> 0) % 3] + (s % 8 >= 4 ? 12 : 0);
-  tone("square", N(note + 12), N(note + 12), t, sixteenth * 0.9, 0.025, musicBus);
+  const note = chord[(E.step >> 0) % 3] + (s % 8 >= 4 ? 12 : 0);
+  tone("square", N(note + 12), N(note + 12), t, sixteenth * 0.9, 0.025, E.musicBus);
   // pad at bar start
   if (s === 0) {
     for (const n of chord) {
@@ -305,7 +316,7 @@ function scheduleStep(t: number) {
       g.gain.setValueAtTime(0.0001, t);
       g.gain.linearRampToValueAtTime(0.03, t + 0.6);
       g.gain.linearRampToValueAtTime(0.0001, t + len);
-      o.connect(f).connect(g).connect(musicBus);
+      o.connect(f).connect(g).connect(E.musicBus);
       o.start(t);
       o.stop(t + len + 0.1);
     }
@@ -314,25 +325,34 @@ function scheduleStep(t: number) {
 
 function startMusic() {
   const c = ensure();
-  if (!c || musicTimer) return;
-  musicBus.gain.cancelScheduledValues(c.currentTime);
-  musicBus.gain.setTargetAtTime(0.55, c.currentTime, 0.8);
-  nextBeat = c.currentTime + 0.1;
-  musicTimer = setInterval(() => {
-    if (!ctx) return;
+  if (!c || E.musicTimer) return;
+  E.musicBus.gain.cancelScheduledValues(c.currentTime);
+  E.musicBus.gain.setTargetAtTime(0.55, c.currentTime, 0.8);
+  E.nextBeat = c.currentTime + 0.1;
+  E.musicTimer = setInterval(() => {
+    if (!E.ctx) return;
     const sixteenth = 60 / BPM / 4;
-    while (nextBeat < ctx.currentTime + 0.35) {
-      scheduleStep(nextBeat);
-      nextBeat += sixteenth;
-      step++;
+    while (E.nextBeat < E.ctx.currentTime + 0.35) {
+      scheduleStep(E.nextBeat);
+      E.nextBeat += sixteenth;
+      E.step++;
     }
   }, 90);
 }
 
 function stopMusic() {
-  if (musicTimer) clearInterval(musicTimer);
-  musicTimer = null;
-  if (ctx) musicBus.gain.setTargetAtTime(0, ctx.currentTime, 0.3);
+  if (E.musicTimer) clearInterval(E.musicTimer);
+  E.musicTimer = null;
+  const c = E.ctx;
+  if (!c) return;
+  const old = E.musicBus;
+  old.gain.cancelScheduledValues(c.currentTime);
+  old.gain.setTargetAtTime(0, c.currentTime, 0.06);
+  // notes already scheduled on the old bus die with it
+  setTimeout(() => old.disconnect(), 400);
+  E.musicBus = c.createGain();
+  E.musicBus.gain.value = 0;
+  E.musicBus.connect(E.master);
 }
 
 export const audioPrefs = {
@@ -340,12 +360,12 @@ export const audioPrefs = {
   setMuted(m: boolean) {
     prefs.muted = m;
     savePref("muted", m);
-    if (ctx) master.gain.setTargetAtTime(m ? 0 : 1, ctx.currentTime, 0.05);
+    if (E.ctx) E.master.gain.setTargetAtTime(m ? 0 : 1, E.ctx.currentTime, 0.05);
   },
   setSfxVolume(v: number) {
     prefs.sfx = v;
     savePref("sfxVolume", v);
-    if (ctx) sfxBus.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
+    if (E.ctx) E.sfxBus.gain.setTargetAtTime(v, E.ctx.currentTime, 0.05);
   },
   setMusic(on: boolean) {
     prefs.music = on;

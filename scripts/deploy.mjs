@@ -8,10 +8,14 @@
 //
 // Secrets are passed to the Vercel CLI over stdin and are never printed.
 
+import { config } from "dotenv";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import readline from "node:readline";
+
+// picks up ABLY_API_KEY (and friends) from .env.local so nothing has to be pasted
+config({ path: ".env.local", quiet: true });
 
 const PROJECT = process.env.PROJECT_NAME ?? "neono";
 const RESET_ENV = process.argv.includes("--reset-env");
@@ -30,7 +34,9 @@ const REGIONS = {
 
 function run(cmd, args, { input, quiet = false, allowFail = false } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { shell: true, stdio: [input === undefined ? "inherit" : "pipe", "pipe", "pipe"] });
+    // CLIs never get the terminal's stdin, so an unexpected prompt fails fast instead of hanging
+    const stdin = input !== undefined ? "pipe" : "ignore";
+    const child = spawn(cmd, args, { shell: true, stdio: [stdin, "pipe", "pipe"] });
     let out = "";
     let err = "";
     child.stdout.on("data", (d) => {
@@ -86,17 +92,29 @@ async function main() {
   console.log(`  Neon:   ${parseJson(me.out).login ?? parseJson(me.out).email ?? "ok"}`);
 
   step(2, "Neon database");
-  const list = parseJson((await neon(["projects", "list", "--output", "json"], { quiet: true })).out);
+  const orgsJson = parseJson((await neon(["orgs", "list", "--output", "json"], { quiet: true })).out);
+  const orgs = Array.isArray(orgsJson) ? orgsJson : (orgsJson.organizations ?? orgsJson.orgs ?? []);
+  let org = process.env.NEON_ORG_ID ? orgs.find((o) => o.id === process.env.NEON_ORG_ID) : orgs[0];
+  if (!process.env.NEON_ORG_ID && orgs.length > 1) {
+    orgs.forEach((o, i) => console.log(`  ${i + 1}) ${o.name} (${o.id})`));
+    const pick = Number(await ask("  Which Neon organization? [1]: ", { fallback: "1" }));
+    org = orgs[pick - 1] ?? orgs[0];
+  }
+  const orgArgs = org ? ["--org-id", org.id] : [];
+  if (org) console.log(`  Organization: ${org.name}`);
+  const list = parseJson((await neon(["projects", "list", ...orgArgs, "--output", "json"], { quiet: true })).out);
   const projects = Array.isArray(list) ? list : (list.projects ?? []);
   let project = projects.find((p) => p.name === PROJECT);
   if (project) {
     console.log(`  Reusing Neon project "${PROJECT}" (${project.region_id})`);
   } else {
-    const region = await ask(`  Region for the new database [aws-us-east-1] (${Object.keys(REGIONS).join(", ")}): `, {
-      fallback: "aws-us-east-1",
-    });
+    const region =
+      process.env.NEON_REGION ??
+      (await ask(`  Region for the new database [aws-ap-southeast-1 = Singapore] (${Object.keys(REGIONS).join(", ")}): `, {
+        fallback: "aws-ap-southeast-1",
+      }));
     if (!REGIONS[region]) throw new Error(`Unknown region ${region}`);
-    const created = parseJson((await neon(["projects", "create", "--name", PROJECT, "--region-id", region, "--output", "json"], { quiet: true })).out);
+    const created = parseJson((await neon(["projects", "create", "--name", PROJECT, "--region-id", region, ...orgArgs, "--output", "json"], { quiet: true })).out);
     project = created.project ?? created;
     console.log(`  Created Neon project "${PROJECT}" in ${region}`);
   }
@@ -142,8 +160,10 @@ async function main() {
   }
 
   step(5, "Deploying to production (this takes a minute)");
-  const dep = await vercel(["deploy", "--prod", "--yes"], { quiet: true });
-  const url = (dep.out + dep.err).match(/https:\/\/[^\s]+\.vercel\.app/g)?.pop();
+  const dep = await vercel(["deploy", "--prod", "--yes"]);
+  // the "Aliased" URL is the public production address; the per-deployment URL sits behind Vercel login
+  const log = dep.out + dep.err;
+  const url = log.match(/Aliased\s+(https:\/\/\S+)/)?.[1] ?? log.match(/https:\/\/[^\s]+\.vercel\.app/g)?.pop();
 
   step(6, "Done");
   console.log(`  Your game is live: \x1b[32m${url ?? "(see the Vercel dashboard)"}\x1b[0m`);
