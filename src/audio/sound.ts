@@ -76,6 +76,7 @@ export function unlockAudio() {
   const c = ensure();
   if (c && c.state === "suspended") void c.resume();
   if (prefs.music) startMusic();
+  preloadVoices();
 }
 
 // ── building blocks ──
@@ -198,6 +199,67 @@ export function playSfx(name: Sfx, delayMs = 0) {
       tone("sawtooth", 400, 60, t, 0.6, 0.1);
       hiss(t, 0.5, 0.2, "lowpass", 2000, 200);
       break;
+  }
+}
+
+// ── voice lines ──
+// Optional recorded clips in /public/sfx (e.g. generated with `npm run voices` via ElevenLabs).
+// Without them, a pitched-up browser voice plus a synth hit is used instead.
+
+export type VoiceLine = "uno" | "caught";
+const VOICE_TEXT: Record<VoiceLine, string> = { uno: "Uno!", caught: "Gotcha!" };
+const clips: Partial<Record<VoiceLine, AudioBuffer | null>> = {};
+
+async function loadClip(name: VoiceLine) {
+  if (name in clips || !ensure()) return;
+  clips[name] = null;
+  try {
+    const res = await fetch(`/sfx/${name}.mp3`, { cache: "force-cache" });
+    if (!res.ok) return;
+    clips[name] = await ctx!.decodeAudioData(await res.arrayBuffer());
+  } catch {
+    clips[name] = null;
+  }
+}
+
+export function preloadVoices() {
+  void loadClip("uno");
+  void loadClip("caught");
+}
+
+export function playVoice(name: VoiceLine) {
+  if (prefs.muted) return;
+  const c = ensure();
+  if (!c) return;
+  const buf = clips[name];
+  if (buf) {
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const g = c.createGain();
+    g.gain.value = 1.15;
+    src.connect(g).connect(sfxBus);
+    src.start();
+    return;
+  }
+  if (!(name in clips)) void loadClip(name);
+  speak(VOICE_TEXT[name], name === "uno");
+}
+
+/** Browser text-to-speech fallback, pushed higher and faster so it sounds like a shout. */
+export function speak(text: string, shout = true) {
+  if (prefs.muted || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+    const lively = voices.find((v) => /en/i.test(v.lang) && /(female|zira|samantha|aria|jenny|google us)/i.test(v.name)) ?? voices.find((v) => /en/i.test(v.lang));
+    if (lively) u.voice = lively;
+    u.rate = shout ? 1.35 : 1.15;
+    u.pitch = shout ? 1.7 : 1.3;
+    u.volume = 1;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(u);
+  } catch {
+    // speech isn't available everywhere; the banner and sound still play
   }
 }
 

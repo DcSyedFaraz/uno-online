@@ -1,7 +1,11 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { UNO_CATCH_GRACE_MS, UNO_WINDOW_MS } from "@/engine/uno";
+import { serverNow } from "@/client/clock";
 import { activeExtras, COLORS, type Color } from "@/engine";
 import { BRAND } from "@/brand";
 import { playCard, sendAction } from "@/client/actions";
@@ -9,6 +13,8 @@ import { playerName, useGame } from "@/client/store/game-store";
 import { audioPrefs, playSfx, unlockAudio } from "@/audio/sound";
 import { COLOR_HEX } from "@/scene/sceneStore";
 import { SeatFxStack, TimerRing } from "@/scene/zones/SeatChips";
+import { useScene } from "@/scene/sceneStore";
+import { shoutNow } from "@/scene/anim/director";
 import { sortHand, useUi, type Quality } from "./uiStore";
 import { CARD_HELP, RULE_HELP } from "./ruleInfo";
 
@@ -38,9 +44,9 @@ export function TopBar() {
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-start justify-between gap-2 p-3 sm:p-4">
       <div className="pointer-events-auto flex items-center gap-2">
-        <a href="/" className="font-display hidden text-lg font-black tracking-wider sm:block">
+        <Link href="/" className="font-display hidden text-lg font-black tracking-wider sm:block">
           <span className="bg-gradient-to-r from-neon-blue via-neon-wild to-neon-red bg-clip-text text-transparent">{BRAND.name}</span>
-        </a>
+        </Link>
         <button
           className="glass flex items-center gap-2 !rounded-xl px-3 py-2 text-sm"
           onClick={() => navigator.clipboard?.writeText(`${window.location.origin}/r/${code}`).then(() => useGame.getState().toast("Invite link copied", "good"))}
@@ -112,8 +118,9 @@ export function SettingsSheet() {
   const reduceMotion = useUi((s) => s.reduceMotion);
   const setReduceMotion = useUi((s) => s.setReduceMotion);
   const [prefs, setPrefs] = useState(audioPrefs.get());
+  const router = useRouter();
   const leave = async () => {
-    if (await sendAction({ type: "leave" })) window.location.href = "/";
+    if (await sendAction({ type: "leave" })) router.push("/");
   };
   return (
     <Sheet open={open} onClose={() => setOpen(false)} title="Settings">
@@ -287,37 +294,112 @@ export function SwapHint() {
   );
 }
 
-// ── action bar ──
+// ── bottom HUD: your badge, actions, shout & catch ──
 
-export function ActionBar() {
+/** Re-renders when the catch window opens/closes, so the hammer shows up at the right moment. */
+function useCatchTarget(): { id: string; name: string } | null {
+  const w = useGame((s) => s.pub?.unoWindow ?? null);
+  const pub = useGame((s) => s.pub);
+  const you = useGame((s) => s.you);
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (!w) return;
+    const now = serverNow();
+    const t1 = setTimeout(() => force((n) => n + 1), Math.max(0, w.openedAt + UNO_CATCH_GRACE_MS - now) + 20);
+    const t2 = setTimeout(() => force((n) => n + 1), Math.max(0, w.openedAt + UNO_WINDOW_MS - now) + 20);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [w]);
+  if (!w || !pub || w.playerId === you) return null;
+  const age = serverNow() - w.openedAt;
+  if (age < UNO_CATCH_GRACE_MS || age >= UNO_WINDOW_MS) return null;
+  const target = pub.players.find((p) => p.id === w.playerId);
+  if (!target || target.cardCount !== 1 || target.saidUno) return null;
+  return { id: target.id, name: target.name };
+}
+
+export function BottomHud() {
   const priv = useGame((s) => s.priv);
   const pub = useGame((s) => s.pub);
   const you = useGame((s) => s.you);
   const selected = useGame((s) => s.selectedCardId);
   const sortMode = useUi((s) => s.sortMode);
   const setSort = useUi((s) => s.setSort);
+  const catchTarget = useCatchTarget();
   if (!priv || !pub || pub.phase !== "playing") return null;
-  const myTurn = pub.turnPlayerId === you;
   const me = pub.players.find((p) => p.id === you);
+  const myTurn = pub.turnPlayerId === you;
+  const color = pub.currentColor ? COLOR_HEX[pub.currentColor] : COLOR_HEX.wild;
   const selectedPlayable = selected && (priv.playable.includes(selected) || priv.jumpIn.includes(selected));
+  const mustShout = priv.canCallUno && (me?.cardCount ?? 0) === 1;
+  const shouted = !!me?.saidUno && me.cardCount === 1;
 
-  const btn = "btn font-display text-sm tracking-wide py-2.5 px-4";
+  const btn = "btn font-display text-[13px] tracking-wide py-2.5 px-3.5 sm:px-4 sm:text-sm";
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[27dvh] z-30 flex justify-center px-3 sm:bottom-[28dvh]">
-      <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[25dvh] z-30 flex items-end justify-between gap-2 px-3 sm:bottom-[27dvh] sm:px-5">
+      {/* your badge */}
+      {me && (
+        <div className="pointer-events-none flex shrink-0 items-center gap-2">
+          <div
+            className="relative grid h-11 w-11 place-items-center rounded-full bg-[#15132a] text-2xl ring-1 ring-white/15 sm:h-12 sm:w-12"
+            style={{ boxShadow: myTurn ? `0 0 24px ${color}` : undefined }}
+          >
+            {myTurn && <TimerRing size={44} color={color} />}
+            {me.avatar}
+            <SeatFxStack pid={me.id} />
+          </div>
+          <div className="hidden text-xs md:block">
+            <div className="font-semibold">{me.name}</div>
+            <div className="text-white/50">
+              {me.cardCount} card{me.cardCount === 1 ? "" : "s"}
+              {pub.settings.winMode === "points" ? ` · ${me.score} pts` : ""}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* actions */}
+      <div className="pointer-events-auto flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2">
+        <AnimatePresence>
+          {catchTarget && (
+            <motion.button
+              key="catch"
+              initial={{ scale: 0.4, rotate: -20, opacity: 0 }}
+              animate={{ scale: 1, rotate: 0, opacity: 1 }}
+              exit={{ scale: 0.4, opacity: 0 }}
+              whileTap={{ scale: 0.9, rotate: -25 }}
+              className={`${btn} bg-neon-red text-white shadow-[0_0_30px_rgba(255,59,92,0.85)]`}
+              onClick={() => {
+                playSfx("click");
+                void sendAction({ type: "catch_uno", targetId: catchTarget.id });
+              }}
+            >
+              <motion.span animate={{ rotate: [0, -35, 0] }} transition={{ repeat: Infinity, duration: 0.7 }} className="inline-block origin-bottom-right">
+                🔨
+              </motion.span>
+              Catch {catchTarget.name}! +{pub.settings.unoPenalty}
+            </motion.button>
+          )}
+        </AnimatePresence>
         {selectedPlayable && (
           <motion.button initial={{ scale: 0.8 }} animate={{ scale: 1 }} className={`${btn} btn-primary`} onClick={() => void playCard(selected!)}>
             Play card
           </motion.button>
         )}
-        {priv.canDraw && (
-          <button className={`${btn} btn-ghost`} onClick={() => void sendAction({ type: "draw" })}>
-            Draw
-          </button>
+        {priv.canDraw && !selectedPlayable && (
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-full bg-black/50 px-3 py-1.5 text-xs font-semibold text-neon-green ring-1 ring-neon-green/40 backdrop-blur"
+          >
+            {priv.playable.length ? "Play a card or tap the deck to draw" : "No match — tap the deck to draw"}
+          </motion.div>
         )}
         {priv.canPass && (
           <button className={`${btn} btn-ghost`} onClick={() => void sendAction({ type: "pass" })}>
-            Keep it & pass
+            Keep &amp; pass
           </button>
         )}
         {priv.canTakePenalty && (
@@ -330,19 +412,33 @@ export function ActionBar() {
             Challenge!
           </button>
         )}
-        {priv.canCallUno && (
-          <motion.button
-            animate={{ scale: [1, 1.08, 1] }}
-            transition={{ repeat: Infinity, duration: 0.9 }}
-            className={`${btn} bg-neon-yellow text-black shadow-[0_0_30px_rgba(255,210,63,0.75)]`}
-            onClick={() => void sendAction({ type: "call_uno" })}
-          >
-            {BRAND.shout}
-          </motion.button>
-        )}
-        {(me?.cardCount ?? 0) > 2 && !myTurn && (
+      </div>
+
+      {/* the shout button is always here, lit up when you can (or must) use it */}
+      <div className="pointer-events-auto flex shrink-0 flex-col items-end gap-1.5">
+        <motion.button
+          aria-label={`Shout ${BRAND.shout}`}
+          disabled={!priv.canCallUno}
+          animate={priv.canCallUno ? { scale: mustShout ? [1, 1.14, 1] : [1, 1.05, 1] } : { scale: 1 }}
+          transition={priv.canCallUno ? { repeat: Infinity, duration: mustShout ? 0.55 : 1 } : undefined}
+          onClick={() => {
+            if (you) shoutNow(you);
+            void sendAction({ type: "call_uno" });
+          }}
+          className={`font-display grid h-16 w-16 place-items-center rounded-full text-[15px] font-black tracking-tight transition-colors sm:h-[72px] sm:w-[72px] sm:text-base ${
+            priv.canCallUno
+              ? "bg-neon-yellow text-black shadow-[0_0_34px_rgba(255,210,63,0.9)]"
+              : shouted
+                ? "bg-neon-yellow/25 text-neon-yellow ring-2 ring-neon-yellow/70"
+                : "bg-white/[0.06] text-white/35 ring-1 ring-white/10"
+          }`}
+          title={priv.canCallUno ? "Shout before someone catches you!" : "Shout when you are down to your last card"}
+        >
+          {BRAND.shout}
+        </motion.button>
+        {(me?.cardCount ?? 0) > 2 && (
           <button
-            className="rounded-full bg-black/40 px-3 py-1.5 text-[11px] text-white/60 ring-1 ring-white/10"
+            className="rounded-full bg-black/40 px-2.5 py-1 text-[10px] text-white/60 ring-1 ring-white/10"
             onClick={() => setSort(sortMode === "color" ? "number" : sortMode === "number" ? "none" : "color")}
           >
             Sort: {sortMode}
@@ -372,56 +468,70 @@ export function TurnStatus() {
         className="pointer-events-none fixed inset-0 z-20 transition-opacity duration-500"
         style={{ opacity: myTurn ? 1 : 0, boxShadow: `inset 0 0 90px -20px ${color}, inset 0 0 0 2px ${color}55` }}
       />
-      <div className="pointer-events-none fixed inset-x-0 top-16 z-20 flex justify-center">
+      <div className="pointer-events-none fixed inset-x-0 top-16 z-20 flex items-center justify-center gap-2">
         <motion.div
           key={text}
           initial={{ y: -8, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          className="font-display rounded-full bg-black/45 px-4 py-1.5 text-xs font-bold tracking-[0.14em] uppercase backdrop-blur ring-1 ring-white/10"
+          className="font-display rounded-full bg-black/45 px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] ring-1 ring-white/10 backdrop-blur sm:text-xs"
           style={{ color: myTurn ? color : "rgba(255,255,255,0.8)" }}
         >
           {text}
         </motion.div>
+        <AnimatePresence>
+          {pub.drawStack > 0 && (
+            <motion.div
+              key={`stack${pub.drawStack}`}
+              initial={{ scale: 1.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.4, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 420, damping: 16 }}
+              className="font-display rounded-full bg-neon-red px-3 py-1 text-base font-black text-white shadow-[0_0_28px_rgba(255,59,92,0.9)]"
+            >
+              +{pub.drawStack}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-      <AnimatePresence>
-        {pub.drawStack > 0 && (
-          <motion.div
-            key="stack"
-            initial={{ scale: 0.3, opacity: 0 }}
-            animate={{ scale: [1.25, 1], opacity: 1 }}
-            exit={{ scale: 0.3, opacity: 0 }}
-            className="font-display pointer-events-none fixed left-1/2 top-[34%] z-20 -translate-x-1/2 text-6xl font-black text-neon-red neon-text"
-          >
-            +{pub.drawStack}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </>
   );
 }
 
-export function MyBadge() {
+// ── shout banner (everyone sees who shouted / got caught) ──
+
+export function ShoutBanner() {
+  const shouts = useScene((s) => s.shouts);
   const pub = useGame((s) => s.pub);
   const you = useGame((s) => s.you);
-  if (!pub || pub.phase === "lobby" || !you) return null;
-  const me = pub.players.find((p) => p.id === you);
-  if (!me) return null;
-  const myTurn = pub.turnPlayerId === you && pub.phase === "playing";
-  const color = pub.currentColor ? COLOR_HEX[pub.currentColor] : COLOR_HEX.wild;
+  const last = shouts[shouts.length - 1];
+  const who = last ? pub?.players.find((p) => p.id === last.pid) : undefined;
+  const by = last?.by ? pub?.players.find((p) => p.id === last.by) : undefined;
   return (
-    <div className="pointer-events-none fixed bottom-[27dvh] left-3 z-30 flex items-center gap-2 sm:left-5">
-      <div className="relative grid h-12 w-12 place-items-center rounded-full bg-[#15132a] text-2xl ring-1 ring-white/15" style={{ boxShadow: myTurn ? `0 0 24px ${color}` : undefined }}>
-        {myTurn && <TimerRing size={48} color={color} />}
-        {me.avatar}
-        <SeatFxStack pid={me.id} />
-      </div>
-      <div className="hidden text-xs sm:block">
-        <div className="font-semibold">{me.name}</div>
-        <div className="text-white/50">
-          {me.cardCount} card{me.cardCount === 1 ? "" : "s"}
-          {pub.settings.winMode === "points" ? ` · ${me.score} pts` : ""}
-        </div>
-      </div>
+    <div className="pointer-events-none fixed inset-x-0 top-[30%] z-40 flex justify-center">
+      <AnimatePresence>
+        {last && (
+          <motion.div
+            key={last.id}
+            initial={{ scale: 0.2, opacity: 0, rotate: -8 }}
+            animate={{ scale: [1.35, 1], opacity: 1, rotate: 0 }}
+            exit={{ scale: 1.6, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 380, damping: 14 }}
+            className="flex flex-col items-center"
+          >
+            <div
+              className={`font-display text-7xl font-black italic tracking-tight neon-text sm:text-8xl ${last.kind === "shout" ? "text-neon-yellow" : "text-neon-red"}`}
+            >
+              {last.kind === "shout" ? BRAND.shout : "🔨 CAUGHT!"}
+            </div>
+            <div className="mt-2 flex items-center gap-2 rounded-full bg-black/60 px-4 py-1.5 text-sm font-semibold ring-1 ring-white/15 backdrop-blur">
+              <span className="text-lg">{who?.avatar}</span>
+              {last.kind === "shout"
+                ? `${who?.id === you ? "You" : (who?.name ?? "Someone")} shouted ${BRAND.shout}`
+                : `${by?.id === you ? "You" : (by?.name ?? "Someone")} caught ${who?.id === you ? "you" : (who?.name ?? "someone")} — +${pub?.settings.unoPenalty ?? 2} cards`}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -473,6 +583,7 @@ export function useKeyboard() {
       } else if (e.key.toLowerCase() === "d" && priv.canDraw) {
         void sendAction({ type: "draw" });
       } else if (e.key.toLowerCase() === "u" && priv.canCallUno) {
+        if (g.you) shoutNow(g.you);
         void sendAction({ type: "call_uno" });
       } else if (e.key === "Escape") {
         g.setPicker(null);

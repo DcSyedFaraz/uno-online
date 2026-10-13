@@ -12,19 +12,20 @@ export interface TableDims {
   discard: THREE.Vector3;
 }
 
-/** Table shape adapts to the screen: a wide oval on desktop, a tall one on phones. */
+export const TABLE_RX = 4.5;
+export const TABLE_RZ = 3.3;
+
+/**
+ * The table keeps the same shape on every screen; only the camera adapts.
+ * `portrait` switches the camera and hand layout for phones.
+ */
 export function tableDims(aspect: number): TableDims {
-  const portrait = aspect < 0.9;
-  if (portrait) {
-    return { rx: 2.7, rz: 3.9, portrait, deck: new THREE.Vector3(-0.62, 0, -0.35), discard: new THREE.Vector3(0.62, 0, -0.35) };
-  }
-  const t = THREE.MathUtils.clamp((aspect - 0.9) / 0.9, 0, 1);
   return {
-    rx: THREE.MathUtils.lerp(3.6, 5.6, t),
-    rz: THREE.MathUtils.lerp(3.4, 3.1, t),
-    portrait,
-    deck: new THREE.Vector3(-0.85, 0, -0.25),
-    discard: new THREE.Vector3(0.85, 0, -0.25),
+    rx: TABLE_RX,
+    rz: TABLE_RZ,
+    portrait: aspect < 0.9,
+    deck: new THREE.Vector3(-1.05, 0, -0.15),
+    discard: new THREE.Vector3(1.0, 0, -0.15),
   };
 }
 
@@ -58,7 +59,7 @@ export function computeSeats(players: PublicPlayer[], you: string | null, d: Tab
   for (let rel = 0; rel < n; rel++) {
     const p = players[(me + rel) % n];
     const angle = rel === 0 ? Math.PI / 2 : angles[rel - 1];
-    const chip = ellipsePoint(d, angle, rel === 0 ? 0.96 : 1.06, 0.05);
+    const chip = ellipsePoint(d, angle, rel === 0 ? 0.96 : d.portrait ? 1.0 : 1.06, 0.05);
     const fan = ellipsePoint(d, angle, rel === 0 ? 0.62 : 0.76, 0.03);
     const yaw = Math.atan2(fan.x, fan.z);
     seats.set(p.id, { pid: p.id, rel, angle, chip, fan, yaw });
@@ -74,11 +75,11 @@ function opponentAngles(k: number, d: TableDims): number[] {
   if (k <= 0) return [];
   if (k === 1) return [Math.PI * 1.5];
   const deg = THREE.MathUtils.degToRad;
-  const extra = d.portrait ? 32 : k >= 6 ? 16 : 6;
+  const extra = k >= 6 ? 18 : 6;
   const inset = k <= 3 ? 30 : 4;
   const start = deg(180 - extra + inset);
   const end = deg(360 + extra - inset);
-  const squash = d.portrait ? 0.75 : 0.62;
+  const squash = d.portrait ? 0.8 : 0.62;
   const N = 240;
   const cum: number[] = [0];
   let px = Math.cos(start) * d.rx;
@@ -137,9 +138,27 @@ export function hash01(id: string, salt = 0): number {
   return ((h >>> 0) % 10000) / 10000;
 }
 
-export function discardSlot(d: TableDims, cardId: string, index: number, outPos: THREE.Vector3, outQuat: THREE.Quaternion) {
+/** Center piles are drawn bigger than hand-held cards so the top card is easy to read. */
+export const PILE_SCALE = 1.7;
+const TILT = new THREE.Quaternion();
+
+/**
+ * Discard pile slot. Older cards lie flat in a loose scatter; the top card is propped up
+ * and tilted toward the camera so you can always see what you have to match.
+ */
+export function discardSlot(d: TableDims, cardId: string, index: number, outPos: THREE.Vector3, outQuat: THREE.Quaternion, top = false) {
+  if (top) {
+    const tilt = d.portrait ? 0.4 : 0.55;
+    // raise it by half its tilted height so the near edge never sinks into the table
+    const lift = ((CARD_H * PILE_SCALE) / 2) * Math.sin(tilt) + 0.14 + index * 0.006;
+    outPos.set(d.discard.x, lift, d.discard.z + 0.1);
+    flatFaceUp((hash01(cardId) - 0.5) * 0.18, outQuat);
+    TILT.setFromAxisAngle(X, tilt);
+    outQuat.premultiply(TILT);
+    return;
+  }
   const a = (hash01(cardId) - 0.5) * 1.1;
-  outPos.set(d.discard.x + (hash01(cardId, 1) - 0.5) * 0.16, 0.02 + index * 0.005, d.discard.z + (hash01(cardId, 2) - 0.5) * 0.16);
+  outPos.set(d.discard.x + (hash01(cardId, 1) - 0.5) * 0.28, 0.02 + index * 0.006, d.discard.z + (hash01(cardId, 2) - 0.5) * 0.28);
   flatFaceUp(a, outQuat);
 }
 

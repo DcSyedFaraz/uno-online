@@ -5,7 +5,7 @@ import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useGame } from "@/client/store/game-store";
 import { cardGeometry, cardMaterials } from "../cards/cardGeometry";
-import { flatFaceDown, hash01 } from "../layout/layout";
+import { flatFaceDown, hash01, PILE_SCALE } from "../layout/layout";
 import { sceneRef } from "../sceneStore";
 
 const FAN_MAX = 12;
@@ -62,9 +62,9 @@ export function Backs() {
       const layers = Math.min(DECK_LAYERS, Math.ceil(pub.drawCount / 3));
       for (let i = 0; i < layers; i++) {
         const h = `d${i}`;
-        tPos.set(d.deck.x + (hash01(h) - 0.5) * 0.03, 0.012 + i * 0.0085, d.deck.z + (hash01(h, 3) - 0.5) * 0.03);
+        tPos.set(d.deck.x + (hash01(h) - 0.5) * 0.05, 0.02 + i * 0.014, d.deck.z + (hash01(h, 3) - 0.5) * 0.05);
         flatFaceDown((hash01(h, 7) - 0.5) * 0.12, tQuat);
-        place(i, 1);
+        place(i, PILE_SCALE);
       }
       for (const p of pub.players) {
         if (p.id === you || p.status !== "active") continue;

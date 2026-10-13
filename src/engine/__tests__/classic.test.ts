@@ -5,7 +5,7 @@ import { applyAction } from "../reducer";
 import { CLASSIC_SETTINGS, mergeSettings } from "../rules";
 import { mulberry32 } from "../rng";
 import { countCards, createGame, newPlayer } from "../state";
-import { UNO_CATCH_GRACE_MS } from "../uno";
+import { UNO_CATCH_GRACE_MS, UNO_WINDOW_MS } from "../uno";
 import { eventsFor, privateView, publicView } from "../view";
 import { arrange, card, Game, num, startedGame } from "./helpers";
 
@@ -287,13 +287,21 @@ describe("last-card shout", () => {
     expect(g.state.unoWindow).toBeNull();
   });
 
-  it("the window closes once the next player acts", () => {
+  it("the next player moving doesn't close the window, but time does", () => {
     const { g, a } = setup();
     g.act("p0", { type: "play", cardId: a.id });
     g.state.drawPile.push(num("green", 9));
-    g.act("p1", { type: "draw" }, 3000);
-    expect(g.state.unoWindow).toBeNull();
-    expect(() => g.act("p2", { type: "catch_uno", targetId: "p0" })).toThrow(/Too late/);
+    g.act("p1", { type: "draw" }, 500);
+    expect(g.state.unoWindow?.playerId).toBe("p0");
+    g.act("p2", { type: "catch_uno", targetId: "p0" }, UNO_CATCH_GRACE_MS);
+    expect(g.hand("p0")).toHaveLength(3);
+  });
+
+  it("can't catch once the window has expired", () => {
+    const { g, a } = setup();
+    g.act("p0", { type: "play", cardId: a.id });
+    expect(() => g.act("p2", { type: "catch_uno", targetId: "p0" }, UNO_WINDOW_MS + 10)).toThrow(/Too late/);
+    expect(g.hand("p0")).toHaveLength(1);
   });
 
   it("shouting with more cards is rejected", () => {

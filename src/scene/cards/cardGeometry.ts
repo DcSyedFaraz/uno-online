@@ -80,40 +80,36 @@ export function cardGeometry(): THREE.BufferGeometry {
 
 // ── materials ──
 
-const faceMats = new Map<string, THREE.MeshPhysicalMaterial>();
-let backMat: THREE.MeshPhysicalMaterial | null = null;
+const faceMats = new Map<string, THREE.MeshStandardMaterial>();
+let backMat: THREE.MeshStandardMaterial | null = null;
 let edgeMat: THREE.MeshStandardMaterial | null = null;
 
-export function faceMaterial(card: Pick<Card, "kind" | "value" | "color">): THREE.MeshPhysicalMaterial {
+/** Matte, satin-like card stock: no clearcoat, so there's no white glare on the faces. */
+export function faceMaterial(card: Pick<Card, "kind" | "value" | "color">): THREE.MeshStandardMaterial {
   const key = `${card.color}:${card.kind}:${card.value ?? ""}`;
   let m = faceMats.get(key);
   if (!m) {
     const t = faceTextures(card);
-    m = new THREE.MeshPhysicalMaterial({
+    m = new THREE.MeshStandardMaterial({
       map: t.map,
       emissiveMap: t.glow,
       emissive: new THREE.Color("#ffffff"),
-      emissiveIntensity: card.color ? 1.25 : 0.7,
-      roughness: 0.52,
+      emissiveIntensity: card.color ? 0.85 : 0.45,
+      roughness: 0.72,
       metalness: 0,
-      clearcoat: 0.3,
-      clearcoatRoughness: 0.45,
-      envMapIntensity: 0.35,
-      specularIntensity: 0.4,
+      envMapIntensity: 0.22,
     });
     faceMats.set(key, m);
   }
   return m;
 }
 
-export function backMaterial(): THREE.MeshPhysicalMaterial {
-  return (backMat ??= new THREE.MeshPhysicalMaterial({
+export function backMaterial(): THREE.MeshStandardMaterial {
+  return (backMat ??= new THREE.MeshStandardMaterial({
     map: backTexture(),
-    roughness: 0.4,
+    roughness: 0.6,
     metalness: 0.05,
-    clearcoat: 0.5,
-    clearcoatRoughness: 0.25,
-    envMapIntensity: 0.5,
+    envMapIntensity: 0.3,
   }));
 }
 

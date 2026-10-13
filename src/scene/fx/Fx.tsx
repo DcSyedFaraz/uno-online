@@ -25,7 +25,7 @@ function Shockwave({ p }: { p: Pulse }) {
     }
     m.visible = true;
     const e = 1 - Math.pow(1 - t, 3);
-    const s = p.kind === "colorburst" ? 0.4 + e * 5.5 : 0.3 + e * 2.6;
+    const s = p.kind === "colorburst" ? 0.8 + e * 6 : 0.7 + e * 3.2;
     m.scale.set(s, s, s);
     (m.material as THREE.MeshBasicMaterial).opacity = (1 - t) * (p.kind === "colorburst" ? 0.75 : 0.9);
   });

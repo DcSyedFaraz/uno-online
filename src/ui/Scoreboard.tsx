@@ -26,17 +26,16 @@ function CountUp({ to }: { to: number }) {
 export function Scoreboard() {
   const pub = useGame((s) => s.pub);
   const you = useGame((s) => s.you);
-  const [show, setShow] = useState(false);
   const over = pub?.phase === "round_over" || pub?.phase === "game_over";
+  const key = over ? `${pub?.phase}:${pub?.round}` : null;
+  const [readyFor, setReadyFor] = useState<string | null>(null);
   // let the last card land before covering the table
   useEffect(() => {
-    if (!over) {
-      setShow(false);
-      return;
-    }
-    const t = setTimeout(() => setShow(true), 1300);
+    if (!key) return;
+    const t = setTimeout(() => setReadyFor(key), 1300);
     return () => clearTimeout(t);
-  }, [over, pub?.round]);
+  }, [key]);
+  const show = key !== null && readyFor === key;
   if (!pub || !pub.lastRound) return null;
   const lr = pub.lastRound;
   const winner = pub.players.find((p) => p.id === lr.winnerId);

@@ -48,9 +48,6 @@ export function useRoom(code: string) {
     };
   }, [code]);
 
-  useEffect(() => {
-    if (member && status === "need_join") setStatus("ready");
-  }, [member, status]);
 
   // realtime connection once we're a member
   useEffect(() => {
@@ -74,7 +71,8 @@ export function useRoom(code: string) {
   }, [code, member, you, transport]);
 
   useTicker(code);
-  return { status, error, setStatus };
+  // joining flips us to ready as soon as the join response arrives
+  return { status: status === "need_join" && member ? "ready" : status, error, setStatus };
 }
 
 /**

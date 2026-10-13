@@ -20,7 +20,7 @@ import {
   setTurn,
   takeFromPile,
 } from "./state";
-import { callUno, catchUno } from "./uno";
+import { callUno, catchUno, expireUnoWindow } from "./uno";
 import { COLORS, type Action, type Card, type Color, type Ctx, type GameEvent, type GameState, type PlayerState } from "./types";
 
 export interface ApplyResult {
@@ -41,6 +41,7 @@ export function applyAction(prev: GameState, action: Action, actorId: string, no
 
 function dispatch(ctx: Ctx, action: Action, actorId: string) {
   const { state } = ctx;
+  expireUnoWindow(state, ctx.now);
   switch (action.type) {
     case "join":
       return join(ctx, actorId, action.name, action.avatar);
@@ -134,7 +135,6 @@ function gameAction(ctx: Ctx, actor: PlayerState, action: Action) {
   }
 
   requireTurn(state, actor);
-  closeOthersWindow(ctx, actor);
   const turn = state.turn;
   switch (action.type) {
     case "draw":
@@ -205,7 +205,6 @@ function play(ctx: Ctx, player: PlayerState, a: { cardId: string; color?: Color;
     assertRule(t && t.id !== player.id && t.status === "active", "Pick another player to swap hands with");
   }
 
-  closeOthersWindow(ctx, player);
   if (jumpIn) {
     state.turnIndex = playerIndex(state, player.id);
     state.turn = { kind: "play" };
@@ -316,7 +315,6 @@ function onTimeout(ctx: Ctx) {
     return;
   }
 
-  closeOthersWindow(ctx, p);
   const turn = state.turn;
   if (turn.kind === "play") {
     draw(ctx, p);
@@ -463,11 +461,6 @@ function markHumanActivity(ctx: Ctx, p: PlayerState) {
     p.autopilot = false;
     if (ctx.state.phase === "playing" && currentPlayer(ctx.state) === p) scheduleDeadline(ctx);
   }
-}
-
-/** A turn-taking action by anyone else ends the window to catch a missed shout. */
-function closeOthersWindow(ctx: Ctx, actor: PlayerState) {
-  if (ctx.state.unoWindow && ctx.state.unoWindow.playerId !== actor.id) ctx.state.unoWindow = null;
 }
 
 function requireHost(state: GameState, p: PlayerState) {

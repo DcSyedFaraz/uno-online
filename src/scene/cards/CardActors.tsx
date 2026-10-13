@@ -11,7 +11,7 @@ import { useUi, sortHand } from "@/ui/uiStore";
 import { playSfx } from "@/audio/sound";
 import { CARD_H, CARD_W, cardGeometry, cardMaterials } from "./cardGeometry";
 import { glowTexture } from "./glow";
-import { discardSlot, flatFaceDown, flatFaceUp, handSlot, type HandSlot } from "../layout/layout";
+import { discardSlot, flatFaceDown, flatFaceUp, handSlot, PILE_SCALE, type HandSlot } from "../layout/layout";
 import { actorTransforms, COLOR_HEX, sceneRef, spawnHints } from "../sceneStore";
 
 type Zone = "hand" | "discard" | "pending";
@@ -61,13 +61,14 @@ function CardActor({ card, zone, index, count, playable, selected, rejected, myT
     if (!hint) return;
     const d = sceneRef.dims;
     if (hint.from === "deck") {
-      s.pos.copy(d.deck).setY(0.3);
-      (hint.faceUp ? flatFaceUp(0, s.quat) : flatFaceDown(0, s.quat));
-      s.scale = 1;
+      s.pos.copy(d.deck).setY(0.5);
+      if (hint.faceUp) flatFaceUp(0, s.quat);
+      else flatFaceDown(0, s.quat);
+      s.scale = PILE_SCALE;
     } else if (hint.from === "discard") {
-      s.pos.copy(d.discard).setY(0.1);
+      s.pos.copy(d.discard).setY(0.2);
       flatFaceUp(0, s.quat);
-      s.scale = 1;
+      s.scale = PILE_SCALE;
     } else {
       const seat = sceneRef.seats.get(hint.from.seat);
       s.pos.copy(seat?.fan ?? d.deck).setY(0.12);
@@ -107,8 +108,10 @@ function CardActor({ card, zone, index, count, playable, selected, rejected, myT
       smooth = s.zone === "hand" ? 0.1 : 0.22;
       if (rejected) tmpPos.addScaledVector(camRight(cam), Math.sin(now / 28) * 0.03);
     } else {
-      discardSlot(d, card.id, zone === "pending" ? 12 : index, tmpPos, tmpQuat);
-      if (zone === "pending") tmpPos.y += 0.05;
+      const top = zone === "pending" || index === count - 1;
+      discardSlot(d, card.id, index, tmpPos, tmpQuat, top);
+      if (zone === "pending") tmpPos.y += 0.08;
+      targetScale = PILE_SCALE;
     }
 
     if (!s.init) {
@@ -150,7 +153,7 @@ function CardActor({ card, zone, index, count, playable, selected, rejected, myT
     if (halo.current && shade.current) {
       const m = halo.current.material as THREE.MeshBasicMaterial;
       const on = zone === "hand" && playable && myTurn;
-      const target = on ? (selected || hovered ? 0.9 : 0.32 + Math.sin(now / 340) * 0.12) : 0;
+      const target = on ? (selected || hovered ? 0.6 : 0.2 + Math.sin(now / 340) * 0.08) : 0;
       m.opacity = THREE.MathUtils.damp(m.opacity, target, 8, dt);
       halo.current.visible = m.opacity > 0.01;
       // dim cards you can't play while it's your turn
@@ -260,7 +263,17 @@ export function CardActors() {
       ? [<CardActor key={pendingCard.id} card={pendingCard} zone="pending" index={0} count={1} playable={false} selected={false} rejected={false} myTurn={false} />]
       : []),
     ...pile.map((c, i) => (
-      <CardActor key={c.id} card={c} zone="discard" index={i} count={pile.length} playable={false} selected={false} rejected={false} myTurn={false} />
+      <CardActor
+        key={c.id}
+        card={c}
+        zone="discard"
+        index={i}
+        count={pendingCard ? pile.length + 1 : pile.length}
+        playable={false}
+        selected={false}
+        rejected={false}
+        myTurn={false}
+      />
     )),
   ];
   return <group>{actors}</group>;

@@ -2,12 +2,12 @@
 
 import * as THREE from "three";
 import { BRAND } from "@/brand";
-import { playSfx } from "@/audio/sound";
+import { playSfx, playVoice } from "@/audio/sound";
 import type { Card, GameEvent, PublicView } from "@/engine";
 import { isDrawCard, isWild } from "@/engine/cards";
 import { onBatch, playerName, useGame, type Batch } from "@/client/store/game-store";
 import { CARD_H } from "../cards/cardGeometry";
-import { computeSeats, flatFaceDown, flatFaceUp, tableDims } from "../layout/layout";
+import { computeSeats, flatFaceDown, flatFaceUp, PILE_SCALE, tableDims } from "../layout/layout";
 import { actorTransforms, COLOR_HEX, sceneRef, spawnHints, useScene, type FaceSpec, type Ghost } from "../sceneStore";
 
 /**
@@ -33,7 +33,7 @@ function ghost(from: THREE.Vector3, to: THREE.Vector3, opts: Partial<Omit<Ghost,
     to,
     fromQuat: flatFaceDown(0),
     toQuat: flatFaceDown(0),
-    fromScale: 1,
+    fromScale: PILE_SCALE,
     toScale: SEAT_SCALE,
     delay: 0,
     duration: 520,
@@ -42,7 +42,7 @@ function ghost(from: THREE.Vector3, to: THREE.Vector3, opts: Partial<Omit<Ghost,
 }
 
 function deckTop(): THREE.Vector3 {
-  return sceneRef.dims.deck.clone().setY(0.25);
+  return sceneRef.dims.deck.clone().setY(0.5);
 }
 
 function cardFlyGhosts(fromPid: string, toPid: string, count: number, delay: number) {
@@ -250,10 +250,18 @@ export function choreograph(b: Batch) {
         break;
       case "uno_call":
         scene.addSeatFx(e.pid, BRAND.shout, "gold", true, t);
-        playSfx("shout", t);
+        // my own shout already played instantly on click
+        if (e.pid !== you || !recentOwnShout()) {
+          scene.addShout({ pid: e.pid, kind: "shout" });
+          playSfx("shout", t);
+          playVoice("uno");
+        }
         break;
       case "uno_caught":
-        scene.addSeatFx(e.pid, "CAUGHT!", "red", true, t);
+        scene.addSeatFx(e.pid, "🔨 CAUGHT!", "red", true, t);
+        scene.addShout({ pid: e.pid, kind: "caught", by: e.by });
+        playVoice("caught");
+        sceneRef.shake = Math.max(sceneRef.shake, 0.6);
         game.toast(`${name(e.by)} caught ${name(e.pid)} not shouting!`, "warn");
         playSfx("caught", t);
         break;
@@ -265,7 +273,7 @@ export function choreograph(b: Batch) {
       case "reshuffle":
         for (let i = 0; i < 6; i++) {
           ghosts.push(
-            ghost(discardPos.clone(), deckTop(), { fromQuat: flatFaceUp(i), toQuat: flatFaceDown(0), fromScale: 1, toScale: 1, delay: t + i * 50 }),
+            ghost(discardPos.clone(), deckTop(), { fromQuat: flatFaceUp(i), toQuat: flatFaceDown(0), fromScale: PILE_SCALE, toScale: PILE_SCALE, delay: t + i * 50 }),
           );
         }
         playSfx("shuffle", t);
@@ -308,6 +316,18 @@ export function choreograph(b: Batch) {
       navigator.vibrate?.(25);
     } catch {}
   }
+}
+
+let ownShoutAt = 0;
+/** Called when you press the shout button so the banner/voice don't wait for the server. */
+export function shoutNow(you: string) {
+  ownShoutAt = performance.now();
+  useScene.getState().addShout({ pid: you, kind: "shout" });
+  playSfx("shout");
+  playVoice("uno");
+}
+function recentOwnShout() {
+  return performance.now() - ownShoutAt < 4000;
 }
 
 function findPlayedId(ev: GameEvent[]): string | undefined {

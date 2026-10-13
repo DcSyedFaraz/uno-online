@@ -2,8 +2,8 @@
 export const BRAND = {
   name: "NEONO",
   tagline: "The neon card game. Up to 10 friends, one link.",
-  /** label on the last-card shout button */
-  shout: "NEONO!",
+  /** label on the last-card shout button (change it here if you'd rather not use the word "UNO") */
+  shout: "UNO!",
 } as const;
 
 export const NEON = {

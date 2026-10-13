@@ -130,6 +130,22 @@ async function broadcast(code: string, prev: GameState, res: ApplyResult, versio
   }
 }
 
+/** Dev-only helper behind /api/dev/rig: trims one player's hand (cards go under the draw pile). */
+export async function rigRoom(code: string, pid: string, keep: number, keepIds?: string[]): Promise<{ v: number }> {
+  const store = getStore();
+  const rec = await loadRoom(code);
+  const state = structuredClone(rec.state);
+  const p = state.players.find((x) => x.id === pid);
+  if (!p) throw new HttpError(404, "Player not found");
+  if (keepIds?.length) p.hand.sort((a, b) => Number(keepIds.includes(b.id)) - Number(keepIds.includes(a.id)));
+  state.drawPile.unshift(...p.hand.splice(keep));
+  p.saidUno = false;
+  const now = Date.now();
+  if (!(await store.update(code, state, rec.version, now))) throw new HttpError(409, "Busy");
+  await broadcast(code, rec.state, { state, events: [] }, rec.version + 1, now);
+  return { v: rec.version + 1 };
+}
+
 export async function cleanupInactive(maxIdleMs: number): Promise<number> {
   return getStore().deleteInactive(Date.now() - maxIdleMs);
 }

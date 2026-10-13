@@ -24,7 +24,7 @@ test("host and guest play together through a share link", async ({ browser }) =>
   await profile(guest, "Guesty");
   await guest.getByRole("button", { name: "Join table" }).click();
   await expect(guest.getByText("Waiting for the host to start")).toBeVisible();
-  await expect(host.getByText("Guesty")).toBeVisible();
+  await expect(host.getByText("Guesty", { exact: true })).toBeVisible();
 
   // guest can't change rules; host turns on one extra rule and it syncs
   await guest.getByText("More rules").click();
@@ -49,8 +49,14 @@ test("host and guest play together through a share link", async ({ browser }) =>
   for (const id of guestIds) expect(hostJson).not.toContain(`"id":"${id}"`);
   expect(hostJson).not.toContain("drawPile");
 
-  // both clients stay in sync as the game moves on (bots + timeouts keep it going)
+  // whoever's turn it is takes an action (D = draw); both clients must see the new version
   const v0 = hs.msg.v;
+  const turn = hs.msg.pub.turnPlayerId;
+  const actor = turn === hs.you ? host : turn === gs.you ? guest : null;
+  if (actor && hs.msg.pub.turn.kind === "play") {
+    await actor.locator("body").click({ position: { x: 5, y: 300 } });
+    await actor.keyboard.press("d");
+  }
   await expect.poll(async () => (await snap(guest)).msg.v, { timeout: 20_000 }).toBeGreaterThan(v0);
   const [a, b] = await Promise.all([snap(host), snap(guest)]);
   expect(Math.abs(a.msg.v - b.msg.v)).toBeLessThanOrEqual(1);

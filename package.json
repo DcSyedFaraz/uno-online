@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "voices": "node scripts/generate-voices.mjs",
+    "deploy": "node scripts/deploy.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",
@@ -21,7 +23,6 @@
     "ably": "^2.29.0",
     "drizzle-orm": "^0.45.4",
     "gsap": "^3.15.0",
-    "howler": "^2.2.4",
     "jose": "^6.2.12",
     "maath": "^0.10.8",
     "motion": "^14.2.0",
@@ -38,7 +39,6 @@
   "devDependencies": {
     "@playwright/test": "^1.64.0",
     "@tailwindcss/turbopack": "^4",
-    "@types/howler": "^2.2.13",
     "@types/node": "^22.20.5",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",

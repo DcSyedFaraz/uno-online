@@ -5,6 +5,11 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    // React Three Fiber mutates three.js objects every frame inside useFrame by design
+    files: ["src/scene/**/*.{ts,tsx}"],
+    rules: { "react-hooks/immutability": "off", "react-hooks/purity": "off" },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

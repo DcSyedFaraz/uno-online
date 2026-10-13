@@ -98,7 +98,7 @@ function DirectionRing({ d }: { d: TableDims }) {
     shape.closePath();
     return new THREE.ShapeGeometry(shape);
   }, []);
-  const r = Math.min(d.rx, d.rz) * 0.52;
+  const r = Math.min(d.rx, d.rz) * 0.66;
   useFrame((_, dt) => {
     const g = group.current;
     if (!g) return;

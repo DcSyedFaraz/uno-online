@@ -2,16 +2,27 @@
 
 import { useFrame, useThree } from "@react-three/fiber";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { PublicPlayer } from "@/engine";
-import { UNO_CATCH_GRACE_MS } from "@/engine/uno";
+import { UNO_CATCH_GRACE_MS, UNO_WINDOW_MS } from "@/engine/uno";
 import { BOT_DELAY_MIN, BOT_DELAY_SPREAD } from "@/engine/state";
 import { BRAND } from "@/brand";
 import { playCard, sendAction } from "@/client/actions";
 import { serverNow } from "@/client/clock";
 import { useGame } from "@/client/store/game-store";
 import { COLOR_HEX, sceneRef, useScene, type FxTone } from "../sceneStore";
+
+/** True on phone-sized screens (keeps chips compact). */
+export function useSmallScreen() {
+  const [small, setSmall] = useState(() => typeof window !== "undefined" && window.innerWidth < 640);
+  useEffect(() => {
+    const on = () => setSmall(window.innerWidth < 640);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  return small;
+}
 
 export const TONE: Record<FxTone, string> = {
   red: "#ff3b5c",
@@ -87,9 +98,13 @@ function CatchButton({ pid }: { pid: string }) {
   const ref = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!w || w.playerId !== pid) return;
-    const wait = Math.max(0, w.openedAt + UNO_CATCH_GRACE_MS - serverNow());
-    const t = setTimeout(() => ref.current?.classList.remove("hidden"), wait);
-    return () => clearTimeout(t);
+    const now = serverNow();
+    const show = setTimeout(() => ref.current?.classList.remove("hidden"), Math.max(0, w.openedAt + UNO_CATCH_GRACE_MS - now));
+    const hide = setTimeout(() => ref.current?.classList.add("hidden"), Math.max(0, w.openedAt + UNO_WINDOW_MS - now));
+    return () => {
+      clearTimeout(show);
+      clearTimeout(hide);
+    };
   }, [w, pid]);
   if (!w || w.playerId !== pid || pid === you) return null;
   return (
@@ -101,7 +116,7 @@ function CatchButton({ pid }: { pid: string }) {
       }}
       className="hidden absolute -bottom-9 left-1/2 -translate-x-1/2 rounded-full bg-neon-red px-3 py-1 text-xs font-black text-white shadow-[0_0_20px_rgba(255,59,92,0.8)] animate-bounce"
     >
-      CATCH!
+      🔨 CATCH!
     </button>
   );
 }
@@ -115,7 +130,9 @@ function Chip({ p }: { p: PublicPlayer }) {
   const color = pub.currentColor ? COLOR_HEX[pub.currentColor] : COLOR_HEX.wild;
   const swapPick = picker?.kind === "swap" && p.status === "active";
   const out = p.status !== "active" && pub.phase === "playing";
-  const size = 54;
+  const small = useSmallScreen();
+  const crowded = small && pub.players.length >= 8;
+  const size = small ? (crowded ? 34 : 40) : 54;
 
   return (
     <div
@@ -142,7 +159,7 @@ function Chip({ p }: { p: PublicPlayer }) {
           }}
         >
           {isTurn && <TimerRing size={size} color={color} />}
-          <span className="text-[26px] leading-none" style={{ filter: online ? "none" : "grayscale(1)" }}>
+          <span className={`leading-none sm:text-[26px] ${crowded ? "text-[17px]" : "text-[20px]"}`} style={{ filter: online ? "none" : "grayscale(1)" }}>
             {p.avatar}
           </span>
           {pub.phase === "playing" && p.status === "active" && (
@@ -155,8 +172,10 @@ function Chip({ p }: { p: PublicPlayer }) {
           )}
           {p.id === pub.hostId && <span className="absolute -left-1.5 -top-2 text-sm">👑</span>}
         </div>
-        <div className="mt-1 max-w-[110px] truncate rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white/90 backdrop-blur">
-          {p.isBot ? "🤖 " : ""}
+        <div
+          className={`mt-1 truncate rounded-full bg-black/55 px-2 py-0.5 font-semibold text-white/90 backdrop-blur sm:max-w-[110px] sm:text-[11px] ${crowded ? "max-w-[58px] text-[9px]" : "max-w-[84px] text-[10px]"}`}
+        >
+          {p.isBot && !crowded ? "🤖 " : ""}
           {p.name}
           {p.autopilot ? " · away" : ""}
           {!online ? " · offline" : ""}

@@ -10,7 +10,7 @@ import { saveProfile } from "@/client/profile";
 import { useRoom } from "@/client/realtime/useRoom";
 import { useGame } from "@/client/store/game-store";
 import { unlockAudio } from "@/audio/sound";
-import { ActionBar, ColorPicker, MyBadge, RulesSheet, SettingsSheet, SwapHint, Toasts, TopBar, TurnStatus, useKeyboard } from "./GameHud";
+import { BottomHud, ColorPicker, RulesSheet, SettingsSheet, ShoutBanner, SwapHint, Toasts, TopBar, TurnStatus, useKeyboard } from "./GameHud";
 import { useStoredProfile } from "./Landing";
 import { Lobby } from "./Lobby";
 import { ProfileForm } from "./ProfileForm";
@@ -73,8 +73,8 @@ function InGame() {
       <SeatChips />
       <TopBar />
       <TurnStatus />
-      <MyBadge />
-      <ActionBar />
+      <BottomHud />
+      <ShoutBanner />
       <SwapHint />
       <ColorPicker />
       <Scoreboard />

@@ -72,7 +72,16 @@ export const actorTransforms = new Map<string, { pos: THREE.Vector3; quat: THREE
 
 let ids = 1;
 
+export interface Shout {
+  id: number;
+  pid: string;
+  kind: "shout" | "caught";
+  by?: string;
+}
+
 interface SceneStore {
+  shouts: Shout[];
+  addShout(s: Omit<Shout, "id">): void;
   ghosts: Ghost[];
   seatFx: SeatFx[];
   pulses: Pulse[];
@@ -86,6 +95,12 @@ interface SceneStore {
 }
 
 export const useScene = create<SceneStore>((set, get) => ({
+  shouts: [],
+  addShout(sh) {
+    const id = ids++;
+    set({ shouts: [...get().shouts.slice(-2), { ...sh, id }] });
+    setTimeout(() => set({ shouts: get().shouts.filter((x) => x.id !== id) }), 1900);
+  },
   ghosts: [],
   seatFx: [],
   pulses: [],

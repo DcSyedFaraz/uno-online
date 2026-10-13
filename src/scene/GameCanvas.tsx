@@ -3,7 +3,7 @@
 import { Environment, Lightformer, PerformanceMonitor, Sparkles } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
-import { useEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo } from "react";
 import * as THREE from "three";
 import { useGame } from "@/client/store/game-store";
 import { effectiveTier, useUi } from "@/ui/uiStore";
@@ -16,6 +16,7 @@ import { computeSeats, tableDims } from "./layout/layout";
 import { actorTransforms, sceneRef } from "./sceneStore";
 import { Table } from "./Table";
 import { Backs } from "./zones/Backs";
+import { DeckTarget } from "./zones/DeckTarget";
 import { Ghosts } from "./zones/Ghosts";
 import { SeatProjector } from "./zones/SeatChips";
 
@@ -28,9 +29,11 @@ function World() {
   const tier = useUi(effectiveTier);
   const seats = useMemo(() => computeSeats(players ?? [], you, d), [players, you, d]);
   // layout is read every frame by the animation code
-  sceneRef.dims = d;
-  sceneRef.seats = seats;
-  sceneRef.you = you;
+  useLayoutEffect(() => {
+    sceneRef.dims = d;
+    sceneRef.seats = seats;
+    sceneRef.you = you;
+  }, [d, seats, you]);
 
   return (
     <>
@@ -60,6 +63,7 @@ function World() {
 
       <Table d={d} reflect={tier === "high"} />
       <Backs />
+      <DeckTarget />
       <CardActors />
       <Ghosts />
       <Pulses />
