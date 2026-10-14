@@ -40,7 +40,7 @@ export async function playCard(cardId: string, opts: { color?: Color; swapTarget
   }
   s.setPicker(null);
   s.select(null);
-  s.setPending(cardId);
+  s.setPending(cardId, opts.color ?? null);
   const ok = await sendAction({ type, cardId, ...opts });
   if (!ok) useGame.getState().reject(cardId);
 }

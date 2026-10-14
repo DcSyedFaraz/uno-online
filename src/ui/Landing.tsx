@@ -59,16 +59,12 @@ export function Landing() {
   return (
     <main className="relative min-h-dvh overflow-hidden">
       <HeroCanvas />
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,rgba(7,7,12,0.75)_80%)]" />
+      <div className="stage-vignette pointer-events-none fixed inset-0" />
       <div className="relative z-10 mx-auto flex min-h-dvh w-full max-w-5xl flex-col items-center justify-center gap-8 px-4 py-12 lg:flex-row lg:justify-between">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }} className="max-w-md text-center lg:text-left">
-          <h1 className="font-display text-6xl font-black tracking-tight sm:text-7xl">
-            <span className="bg-gradient-to-r from-neon-blue via-neon-wild to-neon-red bg-clip-text text-transparent drop-shadow-[0_0_30px_rgba(181,107,255,0.45)]">
-              {BRAND.name}
-            </span>
-          </h1>
-          <p className="mt-4 text-lg text-white/70">{BRAND.tagline}</p>
-          <ul className="mt-6 hidden space-y-2 text-sm text-white/55 lg:block">
+          <h1 className="font-display toon-text text-6xl font-black tracking-tight text-[#ffd84a] sm:text-7xl">{BRAND.name}</h1>
+          <p className="mt-4 text-lg font-semibold text-white [text-shadow:0_2px_0_rgba(60,0,10,0.45)]">{BRAND.tagline}</p>
+          <ul className="mt-6 hidden space-y-2 text-sm font-medium text-white/90 [text-shadow:0_1px_0_rgba(60,0,10,0.45)] lg:block">
             <li>⚡ Classic rules out of the box — switch on stacking, 7-0, jump-in and more if you like</li>
             <li>🔗 Share a link, friends join as guests — no sign-up</li>
             <li>🤖 Fill empty seats with bots</li>
@@ -85,10 +81,10 @@ export function Landing() {
           <button className="btn btn-primary font-display mt-5 w-full py-3.5 text-base tracking-wide" disabled={!valid || !!busy} onClick={create}>
             {busy === "create" ? "Creating…" : "Create a room"}
           </button>
-          <div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-[0.2em] text-white/30">
-            <div className="h-px flex-1 bg-white/10" />
+          <div className="my-4 flex items-center gap-3 text-[11px] font-bold uppercase tracking-[0.2em] text-white/70">
+            <div className="h-0.5 flex-1 rounded bg-white/30" />
             or join
-            <div className="h-px flex-1 bg-white/10" />
+            <div className="h-0.5 flex-1 rounded bg-white/30" />
           </div>
           <form onSubmit={join} className="flex gap-2">
             <input
@@ -103,7 +99,7 @@ export function Landing() {
               Join
             </button>
           </form>
-          {error && <div className="mt-3 text-center text-sm text-neon-red">{error}</div>}
+          {error && <div className="mt-3 rounded-lg bg-white px-3 py-2 text-center text-sm font-semibold text-neon-red">{error}</div>}
         </motion.div>
       </div>
     </main>

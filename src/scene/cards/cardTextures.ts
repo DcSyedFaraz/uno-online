@@ -6,20 +6,32 @@ import { faceKey } from "@/engine/cards";
 import { BRAND, NEON } from "@/brand";
 
 /**
- * Card faces are drawn in code (original NEONO art) and cached as textures.
- * Each face has a color map plus a small "glow" map used as emissive, so only the
- * glyph blooms under post-processing.
+ * Card faces are drawn in code (original NEONO art) and cached as textures:
+ * a white border, a bright body, a light tilted lens and a chunky outlined glyph.
  */
 
 const W = 512;
 const H = 768;
 const R = 46;
+/** white card-stock border */
+const BORDER = 24;
+/** dark outline around glyphs and corner indices */
+const INK = "#14213d";
 
-const SHADES: Record<Color, [string, string, string]> = {
-  red: ["#ff5f7a", "#ff2d55", "#a5102f"],
-  yellow: ["#ffe27a", "#ffc41f", "#b07800"],
-  green: ["#6dffb0", "#14e07a", "#06804a"],
-  blue: ["#7cc0ff", "#2f8cff", "#0b3fa8"],
+const SHADES: Record<Color | "wild", [string, string, string]> = {
+  red: ["#ff6a63", "#f0303a", "#cc1626"],
+  yellow: ["#ffe46b", "#ffcf1a", "#f0a500"],
+  green: ["#6fdc7d", "#2fb84c", "#1c8f37"],
+  blue: ["#5aa2ff", "#1f74e8", "#1556bf"],
+  wild: ["#b48aff", "#8a3ffc", "#6424d6"],
+};
+
+/** Pale tint of each color for the lens. */
+const TINT: Record<Color, string> = {
+  red: "#ffe3e1",
+  yellow: "#fff6d2",
+  green: "#e2f7e5",
+  blue: "#e0edff",
 };
 
 /** Color-blind helper shapes shown in the corners. */
@@ -171,7 +183,7 @@ function wheel(ctx: Ctx2D, r: number) {
 function glyphRoulette(ctx: Ctx2D, s: number) {
   ctx.save();
   wheel(ctx, s * 0.42);
-  ctx.fillStyle = "#0b0b16";
+  ctx.fillStyle = INK;
   ctx.beginPath();
   ctx.arc(0, 0, s * 0.16, 0, Math.PI * 2);
   ctx.fill();
@@ -246,61 +258,100 @@ const CORNER_TEXT: Partial<Record<CardKind, string>> = {
   wild: "W",
 };
 
-function drawCorner(ctx: Ctx2D, card: Pick<Card, "kind" | "value" | "color">, x: number, y: number, flip: boolean) {
+let scratch: [HTMLCanvasElement, Ctx2D] | null = null;
+
+/**
+ * Draws `draw` (centered at x,y) with a thick ink outline and an optional drop shadow.
+ * The outline is a solid silhouette of the glyph stamped in a small circle around it,
+ * which works for text, strokes and filled shapes alike.
+ */
+function outlined(ctx: Ctx2D, x: number, y: number, flip: boolean, draw: (c: Ctx2D) => void, fill: string, thickness: number, shadow = 0) {
+  scratch ??= canvas(W, H);
+  const [sil, sx] = scratch;
+  sx.setTransform(1, 0, 0, 1, 0, 0);
+  sx.globalCompositeOperation = "source-over";
+  sx.globalAlpha = 1;
+  sx.clearRect(0, 0, W, H);
+  sx.translate(W / 2, H / 2);
+  if (flip) sx.rotate(Math.PI);
+  sx.fillStyle = sx.strokeStyle = INK;
+  draw(sx);
+  sx.setTransform(1, 0, 0, 1, 0, 0);
+  sx.globalCompositeOperation = "source-in";
+  sx.globalAlpha = 1;
+  sx.fillStyle = INK;
+  sx.fillRect(0, 0, W, H);
+
+  const ox = x - W / 2;
+  const oy = y - H / 2;
+  if (shadow) {
+    ctx.save();
+    ctx.globalAlpha = 0.28;
+    ctx.drawImage(sil, ox + shadow * 0.4, oy + shadow);
+    ctx.restore();
+  }
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    ctx.drawImage(sil, ox + Math.cos(a) * thickness, oy + Math.sin(a) * thickness);
+  }
   ctx.save();
   ctx.translate(x, y);
   if (flip) ctx.rotate(Math.PI);
-  ctx.fillStyle = "#ffffff";
-  ctx.shadowColor = "rgba(0,0,0,0.55)";
-  ctx.shadowBlur = 8;
-  ctx.shadowOffsetY = 2;
-  const s = 92;
-  if (card.kind === "number" || CORNER_TEXT[card.kind]) {
-    const t = card.kind === "number" ? String(card.value) : CORNER_TEXT[card.kind]!;
-    ctx.font = font(t.length > 2 ? 46 : t.length > 1 ? 56 : 74);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(t, 0, 0);
-    if (card.kind === "number" && (card.value === 6 || card.value === 9)) ctx.fillRect(-14, 36, 28, 6);
-  } else if (card.kind === "wild_roulette") {
-    ctx.shadowBlur = 0;
-    wheel(ctx, 28);
-  } else {
-    drawGlyph(ctx, card, s * 0.62);
-  }
-  if (card.color) {
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 0.85;
-    shape(ctx, SHAPES[card.color], 0, 62, 22);
-  }
+  ctx.fillStyle = ctx.strokeStyle = fill;
+  draw(ctx);
   ctx.restore();
 }
 
-function paintFace(card: Pick<Card, "kind" | "value" | "color">): HTMLCanvasElement {
+function cornerMark(card: Pick<Card, "kind" | "value" | "color">) {
+  return (ctx: Ctx2D) => {
+    if (card.kind === "number" || CORNER_TEXT[card.kind]) {
+      const t = card.kind === "number" ? String(card.value) : CORNER_TEXT[card.kind]!;
+      ctx.font = font(t.length > 2 ? 44 : t.length > 1 ? 54 : 70);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(t, 0, 0);
+      if (card.kind === "number" && (card.value === 6 || card.value === 9)) ctx.fillRect(-14, 34, 28, 6);
+    } else if (card.kind === "wild_roulette") {
+      wheel(ctx, 26);
+    } else {
+      drawGlyph(ctx, card, 56);
+    }
+    // color-blind helper shape under the index
+    if (card.color) shape(ctx, SHAPES[card.color], 0, 60, 20);
+  };
+}
+
+/** White card stock with the bright body inset by the border. */
+function cardBody(ctx: Ctx2D, top: string, mid: string, bottom: string) {
+  roundRect(ctx, 0, 0, W, H, R);
+  ctx.fillStyle = "#fffdf8";
+  ctx.fill();
+  roundRect(ctx, BORDER, BORDER, W - BORDER * 2, H - BORDER * 2, R - 14);
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, top);
+  g.addColorStop(0.5, mid);
+  g.addColorStop(1, bottom);
+  ctx.fillStyle = g;
+  ctx.fill();
+}
+
+function clipBody(ctx: Ctx2D) {
+  roundRect(ctx, BORDER, BORDER, W - BORDER * 2, H - BORDER * 2, R - 14);
+  ctx.clip();
+}
+
+/** `tint`: the color picked for a played wild, which replaces its purple body. */
+function paintFace(card: Pick<Card, "kind" | "value" | "color">, tint: Color | null = null): HTMLCanvasElement {
   const [c, ctx] = canvas(W, H);
   const color = card.color;
+  const [light, mid, dark] = SHADES[color ?? tint ?? "wild"];
+  cardBody(ctx, light, mid, dark);
 
-  // body
-  roundRect(ctx, 0, 0, W, H, R);
   ctx.save();
-  ctx.clip();
-  if (color) {
-    const [light, mid, dark] = SHADES[color];
-    const g = ctx.createLinearGradient(0, 0, W, H);
-    g.addColorStop(0, light);
-    g.addColorStop(0.45, mid);
-    g.addColorStop(1, dark);
-    ctx.fillStyle = g;
-  } else {
-    const g = ctx.createLinearGradient(0, 0, W, H);
-    g.addColorStop(0, "#1b1530");
-    g.addColorStop(1, "#07060f");
-    ctx.fillStyle = g;
-  }
-  ctx.fillRect(0, 0, W, H);
+  clipBody(ctx);
 
   // subtle diagonal sheen lines
-  ctx.globalAlpha = 0.07;
+  ctx.globalAlpha = 0.08;
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 2;
   for (let i = -H; i < W; i += 26) {
@@ -311,98 +362,56 @@ function paintFace(card: Pick<Card, "kind" | "value" | "color">): HTMLCanvasElem
   }
   ctx.globalAlpha = 1;
 
-  // central tilted lens
+  // central tilted lens: light on colored cards, the color wheel on wilds
   ctx.save();
   ctx.translate(W / 2, H / 2);
   ctx.rotate(-0.42);
   ctx.beginPath();
-  ctx.ellipse(0, 0, W * 0.4, H * 0.36, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, W * 0.37, H * 0.33, 0, 0, Math.PI * 2);
   if (color) {
-    const lg = ctx.createRadialGradient(0, -40, 20, 0, 0, W * 0.45);
-    lg.addColorStop(0, "#1c1c30");
-    lg.addColorStop(1, "#08080f");
+    const lg = ctx.createRadialGradient(-30, -60, 20, 0, 0, W * 0.42);
+    lg.addColorStop(0, "#ffffff");
+    lg.addColorStop(1, TINT[color]);
     ctx.fillStyle = lg;
     ctx.fill();
-    ctx.lineWidth = 10;
-    ctx.strokeStyle = "rgba(255,255,255,0.85)";
-    ctx.stroke();
   } else {
     ctx.save();
     ctx.clip();
     ctx.rotate(0.42);
     wheel(ctx, W * 0.6);
     ctx.restore();
-    ctx.lineWidth = 10;
-    ctx.strokeStyle = "rgba(255,255,255,0.9)";
-    ctx.stroke();
   }
-  ctx.restore();
-
-  // big glyph
-  ctx.save();
-  ctx.translate(W / 2, H / 2);
-  ctx.fillStyle = color ? NEON[color] : "#ffffff";
-  ctx.strokeStyle = ctx.fillStyle;
-  ctx.shadowColor = color ? NEON[color] : "rgba(0,0,0,0.6)";
-  ctx.shadowBlur = color ? 26 : 18;
-  if (!color) {
-    ctx.shadowOffsetY = 4;
-  }
-  drawGlyph(ctx, card, 300);
+  ctx.lineWidth = 9;
+  ctx.strokeStyle = "#ffffff";
+  ctx.stroke();
   ctx.restore();
 
   // glossy highlight
   const hl = ctx.createLinearGradient(0, 0, W * 0.6, H * 0.6);
-  hl.addColorStop(0, "rgba(255,255,255,0.28)");
+  hl.addColorStop(0, "rgba(255,255,255,0.26)");
   hl.addColorStop(0.35, "rgba(255,255,255,0.04)");
   hl.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = hl;
   ctx.fillRect(0, 0, W, H);
   ctx.restore();
 
-  // inner border
-  roundRect(ctx, 14, 14, W - 28, H - 28, R - 12);
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = "rgba(255,255,255,0.35)";
-  ctx.stroke();
+  // big glyph in the card color (white on wilds), outlined in ink
+  outlined(ctx, W / 2, H / 2, false, (g) => drawGlyph(g, card, 300), color ? mid : "#ffffff", 9, 12);
 
-  drawCorner(ctx, card, 70, 82, false);
-  drawCorner(ctx, card, W - 70, H - 82, true);
-  return c;
-}
-
-function paintGlow(card: Pick<Card, "kind" | "value" | "color">): HTMLCanvasElement {
-  const gw = 128;
-  const gh = 192;
-  const [c, ctx] = canvas(gw, gh);
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, gw, gh);
-  ctx.save();
-  ctx.translate(gw / 2, gh / 2);
-  const col = card.color ? NEON[card.color] : "#ffffff";
-  ctx.fillStyle = col;
-  ctx.strokeStyle = col;
-  ctx.globalAlpha = card.color ? 1 : 0.55;
-  drawGlyph(ctx, card, 75);
-  ctx.restore();
+  outlined(ctx, 78, 92, false, cornerMark(card), "#ffffff", 5);
+  outlined(ctx, W - 78, H - 92, true, cornerMark(card), "#ffffff", 5);
   return c;
 }
 
 function paintBack(): HTMLCanvasElement {
   const [c, ctx] = canvas(W, H);
-  roundRect(ctx, 0, 0, W, H, R);
-  ctx.save();
-  ctx.clip();
-  const g = ctx.createLinearGradient(0, 0, W, H);
-  g.addColorStop(0, "#1a1240");
-  g.addColorStop(0.5, "#0b0a1d");
-  g.addColorStop(1, "#200a2e");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
+  cardBody(ctx, "#4b95ff", "#1f64dc", "#1546a8");
 
-  // hex grid
-  ctx.globalAlpha = 0.12;
-  ctx.strokeStyle = "#8f7bff";
+  ctx.save();
+  clipBody(ctx);
+  // light hex grid
+  ctx.globalAlpha = 0.1;
+  ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 2;
   const hs = 34;
   for (let row = -1; row < H / (hs * 0.86) + 1; row++) {
@@ -420,40 +429,40 @@ function paintBack(): HTMLCanvasElement {
   }
   ctx.globalAlpha = 1;
 
+  // red lens with a gold rim
   ctx.translate(W / 2, H / 2);
   ctx.rotate(-0.42);
   ctx.beginPath();
-  ctx.ellipse(0, 0, W * 0.38, H * 0.3, 0, 0, Math.PI * 2);
-  const lg = ctx.createLinearGradient(-W * 0.4, 0, W * 0.4, 0);
-  lg.addColorStop(0, NEON.blue);
-  lg.addColorStop(0.35, NEON.wild);
-  lg.addColorStop(0.7, NEON.red);
-  lg.addColorStop(1, NEON.yellow);
-  ctx.lineWidth = 12;
-  ctx.strokeStyle = lg;
-  ctx.shadowColor = NEON.wild;
-  ctx.shadowBlur = 30;
-  ctx.stroke();
-  ctx.fillStyle = "rgba(5,5,12,0.75)";
+  ctx.ellipse(0, 0, W * 0.37, H * 0.3, 0, 0, Math.PI * 2);
+  const lg = ctx.createRadialGradient(-30, -50, 10, 0, 0, W * 0.42);
+  lg.addColorStop(0, "#ff6b55");
+  lg.addColorStop(1, "#d8141f");
+  ctx.fillStyle = lg;
   ctx.fill();
-  ctx.shadowBlur = 24;
-  ctx.font = font(78);
+  ctx.lineWidth = 14;
+  ctx.strokeStyle = "#ffcf1a";
+  ctx.stroke();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = INK;
+  ctx.stroke();
+
+  // wordmark: yellow with an ink outline
+  ctx.font = font(84);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = lg;
+  ctx.lineJoin = "round";
+  ctx.lineWidth = 16;
+  ctx.strokeStyle = INK;
+  ctx.strokeText(BRAND.name, 0, 4);
+  ctx.fillStyle = "#ffd84a";
   ctx.fillText(BRAND.name, 0, 4);
   ctx.restore();
-
-  roundRect(ctx, 14, 14, W - 28, H - 28, R - 12);
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = "rgba(160,140,255,0.45)";
-  ctx.stroke();
   return c;
 }
 
-function toTexture(c: HTMLCanvasElement, srgb = true): THREE.CanvasTexture {
+function toTexture(c: HTMLCanvasElement): THREE.CanvasTexture {
   const t = new THREE.CanvasTexture(c);
-  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
   t.generateMipmaps = true;
   t.minFilter = THREE.LinearMipmapLinearFilter;
@@ -462,15 +471,16 @@ function toTexture(c: HTMLCanvasElement, srgb = true): THREE.CanvasTexture {
 }
 
 type FaceSpec = Pick<Card, "kind" | "value" | "color">;
-const faceCache = new Map<string, { map: THREE.CanvasTexture; glow: THREE.CanvasTexture; spec: FaceSpec }>();
+const faceCache = new Map<string, { map: THREE.CanvasTexture; spec: FaceSpec; tint: Color | null }>();
 let backTex: THREE.CanvasTexture | null = null;
 
-export function faceTextures(card: FaceSpec) {
-  const key = faceKey(card);
+export function faceTextures(card: FaceSpec, tint: Color | null = null) {
+  const wildTint = card.color ? null : tint;
+  const key = `${faceKey(card)}@${wildTint ?? ""}`;
   let t = faceCache.get(key);
   if (!t) {
     const spec = { kind: card.kind, value: card.value, color: card.color };
-    t = { map: toTexture(paintFace(spec)), glow: toTexture(paintGlow(spec)), spec };
+    t = { map: toTexture(paintFace(spec, wildTint)), spec, tint: wildTint };
     faceCache.set(key, t);
   }
   return t;
@@ -486,10 +496,8 @@ export function refreshTexturesWhenFontsReady() {
   const fam = displayFamily();
   Promise.all([document.fonts.load(`900 40px ${fam}`), document.fonts.ready]).then(() => {
     for (const t of faceCache.values()) {
-      t.map.image = paintFace(t.spec);
+      t.map.image = paintFace(t.spec, t.tint);
       t.map.needsUpdate = true;
-      t.glow.image = paintGlow(t.spec);
-      t.glow.needsUpdate = true;
     }
     if (backTex) {
       backTex.image = paintBack();

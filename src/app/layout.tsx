@@ -8,7 +8,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 const unbounded = Unbounded({ variable: "--font-unbounded", subsets: ["latin"], weight: ["500", "700", "900"] });
 
 export const metadata: Metadata = {
-  title: `${BRAND.name} — online neon card game`,
+  title: `${BRAND.name} — online card game`,
   description: BRAND.tagline,
 };
 
@@ -16,7 +16,9 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  themeColor: "#07070c",
+  // draw under the notch (it sits at the side in landscape); the HUD pads with safe-area insets
+  viewportFit: "cover",
+  themeColor: "#a3121c",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

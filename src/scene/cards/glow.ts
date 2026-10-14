@@ -13,12 +13,15 @@ export function glowTexture(): THREE.CanvasTexture {
   c.width = w;
   c.height = h;
   const ctx = c.getContext("2d")!;
-  ctx.filter = "blur(18px)";
-  ctx.fillStyle = "#fff";
+  // a shadow cast from a shape drawn off-canvas: blurs everywhere (canvas `filter` doesn't on older Safari)
   const pad = 46;
   const r = 30;
+  ctx.shadowColor = "#fff";
+  ctx.shadowBlur = 36;
+  ctx.shadowOffsetX = w * 2;
+  ctx.fillStyle = "#fff";
   ctx.beginPath();
-  ctx.roundRect(pad, pad, w - pad * 2, h - pad * 2, r);
+  ctx.roundRect(pad - w * 2, pad, w - pad * 2, h - pad * 2, r);
   ctx.fill();
   tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;

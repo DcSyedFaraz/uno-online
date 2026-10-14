@@ -6,10 +6,11 @@ export const BRAND = {
   shout: "UNO!",
 } as const;
 
+/** The four card colors plus wild: the one palette for cards, table, HUD and effects. */
 export const NEON = {
-  red: "#ff3b5c",
-  yellow: "#ffd23f",
-  green: "#2bff88",
-  blue: "#3b9eff",
-  wild: "#b56bff",
+  red: "#f0303a",
+  yellow: "#ffcf1a",
+  green: "#2fb84c",
+  blue: "#1f74e8",
+  wild: "#8a3ffc",
 } as const;

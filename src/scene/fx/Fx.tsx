@@ -3,13 +3,14 @@
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
+import { NEON } from "@/brand";
 import { dotTexture } from "../cards/glow";
 import { useScene, type Pulse } from "../sceneStore";
 
 function Shockwave({ p }: { p: Pulse }) {
   const ref = useRef<THREE.Mesh>(null);
   const remove = useScene((s) => s.removePulse);
-  const color = useMemo(() => new THREE.Color(p.color).multiplyScalar(2.2), [p.color]);
+  const color = useMemo(() => new THREE.Color(p.color), [p.color]);
   const duration = p.kind === "colorburst" ? 1100 : 750;
   useFrame(() => {
     const m = ref.current;
@@ -30,9 +31,10 @@ function Shockwave({ p }: { p: Pulse }) {
     (m.material as THREE.MeshBasicMaterial).opacity = (1 - t) * (p.kind === "colorburst" ? 0.75 : 0.9);
   });
   return (
-    <mesh ref={ref} position={[p.pos.x, 0.04, p.pos.z]} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+    // just above the felt and drawn first, so the ring always passes under the piles
+    <mesh ref={ref} position={[p.pos.x, 0.017, p.pos.z]} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={-1}>
       <ringGeometry args={[0.42, 0.5, 64]} />
-      <meshBasicMaterial color={color} transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+      <meshBasicMaterial color={color} transparent opacity={0} depthWrite={false} />
     </mesh>
   );
 }
@@ -55,7 +57,7 @@ function Burst({ p }: { p: Pulse }) {
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     return { geom: g, vel: v };
   }, []);
-  const color = useMemo(() => new THREE.Color(p.color).multiplyScalar(2.5), [p.color]);
+  const color = useMemo(() => new THREE.Color(p.color), [p.color]);
   useFrame(() => {
     const pts = ref.current;
     if (!pts) return;
@@ -86,8 +88,6 @@ function Burst({ p }: { p: Pulse }) {
         size={0.16}
         transparent
         depthWrite={false}
-        blending={THREE.AdditiveBlending}
-        toneMapped={false}
         sizeAttenuation
       />
     </points>
@@ -104,7 +104,7 @@ export function Pulses() {
 }
 
 const CONFETTI_N = 260;
-const CONFETTI_COLORS = ["#ff3b5c", "#ffd23f", "#2bff88", "#3b9eff", "#b56bff", "#ffffff"];
+const CONFETTI_COLORS = [NEON.red, NEON.yellow, NEON.green, NEON.blue, NEON.wild, "#ffffff"];
 
 /** Falling confetti quads for round wins. */
 export function Confetti() {
@@ -168,7 +168,7 @@ export function Confetti() {
   return (
     <instancedMesh ref={mesh} args={[undefined, undefined, CONFETTI_N]} frustumCulled={false} visible={false}>
       <planeGeometry args={[0.09, 0.05]} />
-      <meshBasicMaterial side={THREE.DoubleSide} toneMapped={false} />
+      <meshBasicMaterial side={THREE.DoubleSide} />
     </instancedMesh>
   );
 }

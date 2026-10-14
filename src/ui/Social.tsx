@@ -39,7 +39,7 @@ export function ReactionBar() {
           whileHover={{ y: -3 }}
           disabled={cool}
           onClick={() => send(r)}
-          className="grid h-9 w-9 place-items-center rounded-xl bg-white/[0.06] text-lg ring-1 ring-white/10 transition disabled:opacity-50"
+          className="grid h-9 w-9 place-items-center rounded-xl bg-white/20 text-lg ring-2 ring-white/40 transition disabled:opacity-50 short:h-8 short:w-8"
           aria-label={`React ${r}`}
         >
           {r}
@@ -72,17 +72,20 @@ export function ChatDock() {
   };
 
   return (
-    <div className="fixed right-3 top-16 z-40 flex flex-col items-end gap-2 sm:right-4 sm:top-20">
+    // in the lobby there's no top bar, so the chat button takes the top-right corner
+    <div
+      className={`fixed right-[max(0.75rem,env(safe-area-inset-right))] z-40 flex flex-col items-end gap-2 ${pub?.phase === "lobby" ? "top-4 short:top-2" : "top-16 sm:top-20 short:top-[52px]"}`}
+    >
       <div className="flex items-center gap-2">
         <div className="hidden lg:block">{pub?.phase !== "lobby" && <ReactionBar />}</div>
         <button
-          className="glass relative grid h-11 w-11 place-items-center !rounded-xl text-lg"
+          className="glass relative grid h-11 w-11 place-items-center !rounded-xl text-lg short:h-9 short:w-9 short:text-base"
           onClick={() => setOpen(!open)}
           aria-label="Chat"
         >
           💬
           {unread > 0 && (
-            <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-neon-red px-1 text-[10px] font-bold">{unread}</span>
+            <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-neon-red px-1 text-[10px] font-bold ring-2 ring-white">{unread}</span>
           )}
         </button>
       </div>
@@ -92,34 +95,34 @@ export function ChatDock() {
             initial={{ opacity: 0, y: -10, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.97 }}
-            className="glass flex h-[min(420px,55dvh)] w-[min(340px,calc(100vw-24px))] flex-col overflow-hidden"
+            className="glass flex h-[min(420px,55dvh)] w-[min(340px,calc(100vw-24px))] flex-col overflow-hidden short:h-[min(420px,70dvh)]"
           >
-            <div className="flex items-center justify-between border-b border-white/5 px-4 py-2.5">
+            <div className="flex items-center justify-between border-b border-white/20 px-4 py-2.5">
               <span className="font-display text-sm font-bold">Table chat</span>
-              <button className="text-white/50" onClick={() => setOpen(false)} aria-label="Close chat">
+              <button className="text-white/80" onClick={() => setOpen(false)} aria-label="Close chat">
                 ✕
               </button>
             </div>
             <div ref={list} className="flex-1 space-y-2 overflow-y-auto px-3 py-3 scrollbar-thin">
-              {chat.length === 0 && <div className="pt-10 text-center text-xs text-white/40">Say hi 👋</div>}
+              {chat.length === 0 && <div className="pt-10 text-center text-xs text-white/75">Say hi 👋</div>}
               {chat.map((m) => {
                 const mine = m.pid === you;
                 const author = pub?.players.find((p) => p.id === m.pid);
                 return (
                   <div key={m.id} className={`flex gap-2 ${mine ? "flex-row-reverse" : ""}`}>
-                    <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/10 text-sm">{author?.avatar ?? "🙂"}</div>
-                    <div className={`max-w-[75%] rounded-2xl px-3 py-1.5 text-sm ${mine ? "bg-accent/80" : "bg-white/8"}`}>
-                      {!mine && <div className="text-[10px] font-semibold text-white/50">{playerName(pub, m.pid, you)}</div>}
+                    <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white text-sm">{author?.avatar ?? "🙂"}</div>
+                    <div className={`max-w-[75%] rounded-2xl px-3 py-1.5 text-sm shadow-[0_2px_0_rgba(10,30,90,0.3)] ${mine ? "bg-accent text-white" : "bg-white text-ink"}`}>
+                      {!mine && <div className="text-[10px] font-bold text-[#1d5fd6]">{playerName(pub, m.pid, you)}</div>}
                       <div className="break-words">{m.text}</div>
                     </div>
                   </div>
                 );
               })}
             </div>
-            <div className="border-t border-white/5 p-2 lg:hidden">
+            <div className="border-t border-white/20 p-2 lg:hidden">
               <ReactionBar />
             </div>
-            <form onSubmit={submit} className="flex gap-2 border-t border-white/5 p-2">
+            <form onSubmit={submit} className="flex gap-2 border-t border-white/20 p-2">
               <input className="input py-2 text-sm" value={text} maxLength={CHAT_MAX} onChange={(e) => setText(e.target.value)} placeholder="Message…" />
               <button className="btn btn-primary px-3 py-2 text-sm" type="submit">
                 Send

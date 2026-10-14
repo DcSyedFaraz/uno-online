@@ -3,6 +3,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { NEON } from "@/brand";
 import { sendAction } from "@/client/actions";
 import { useGame } from "@/client/store/game-store";
 import { playSfx } from "@/audio/sound";
@@ -57,14 +58,16 @@ export function DeckTarget() {
       a.rotation.y += dt * 1.6;
     }
     if (arrowMat.current) {
-      color.set(canTake ? "#ff3b5c" : "#2bff88").multiplyScalar(2.2 + Math.sin(t * 6) * 0.4);
+      color.set(canTake ? NEON.red : NEON.green);
+      arrowMat.current.color.copy(color);
       arrowMat.current.emissive.copy(color);
+      arrowMat.current.emissiveIntensity = 0.25 + Math.sin(t * 6) * 0.1;
     }
     if (ring.current) {
       const m = ring.current.material as THREE.MeshBasicMaterial;
-      m.opacity = THREE.MathUtils.damp(m.opacity, active ? 0.55 + Math.sin(t * 4) * 0.2 : 0, 8, dt);
+      m.opacity = THREE.MathUtils.damp(m.opacity, active ? 0.75 + Math.sin(t * 4) * 0.2 : 0, 8, dt);
       ring.current.visible = m.opacity > 0.01;
-      m.color.set(canTake ? "#ff3b5c" : "#2bff88").multiplyScalar(2);
+      m.color.set(canTake ? "#ffd0c8" : "#fff4b0");
     }
   });
 
@@ -99,13 +102,13 @@ export function DeckTarget() {
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       {/* glow outline under the deck */}
-      <mesh ref={ring} position={[d.deck.x, 0.012, d.deck.z]} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+      <mesh ref={ring} position={[d.deck.x, 0.018, d.deck.z]} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={-1}>
         <planeGeometry args={[w * 1.9, h * 1.7]} />
-        <meshBasicMaterial map={glowTexture()} transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+        <meshBasicMaterial map={glowTexture()} transparent opacity={0} depthWrite={false} />
       </mesh>
       <group ref={arrow} visible={false}>
         <mesh geometry={geom}>
-          <meshStandardMaterial ref={arrowMat} color="#0d2a1c" emissive="#2bff88" emissiveIntensity={1} roughness={0.35} metalness={0.2} toneMapped={false} />
+          <meshStandardMaterial ref={arrowMat} color={NEON.green} emissive={NEON.green} emissiveIntensity={0.25} roughness={0.4} metalness={0} />
         </mesh>
       </group>
     </group>

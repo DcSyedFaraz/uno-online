@@ -1,13 +1,14 @@
 "use client";
 
-import { Environment, Float, Lightformer, Sparkles } from "@react-three/drei";
+import { Float } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { IS_TOUCH } from "@/client/device";
 import type { Card } from "@/engine";
 import { cardGeometry, cardMaterials } from "./cards/cardGeometry";
 import { refreshTexturesWhenFontsReady } from "./cards/cardTextures";
+import { STAGE } from "./Table";
 
 const HERO: Omit<Card, "id">[] = [
   { kind: "wild4", color: null },
@@ -55,25 +56,22 @@ function Orbit() {
   );
 }
 
+/** Landing backdrop: bright cards orbiting on the red stage. No post-processing (see GameCanvas). */
 export default function HeroCanvas() {
   useEffect(() => refreshTexturesWhenFontsReady(), []);
   return (
-    <Canvas className="!fixed inset-0" dpr={[1, 1.8]} camera={{ position: [0, 1.2, 8.5], fov: 42 }} gl={{ antialias: false, toneMapping: THREE.ACESFilmicToneMapping }}>
-      <color attach="background" args={["#07070c"]} />
-      <fog attach="fog" args={["#07070c", 8, 18]} />
-      <ambientLight intensity={0.4} color="#9a96ff" />
-      <pointLight position={[-5, 3, 3]} intensity={30} color="#ff3b8d" />
-      <pointLight position={[5, 3, 3]} intensity={30} color="#3b9eff" />
-      <Environment resolution={128} frames={1}>
-        <Lightformer form="rect" intensity={2} position={[0, 5, -5]} scale={[10, 3, 1]} color="#b9a8ff" />
-        <Lightformer form="ring" intensity={1.4} position={[0, 4, 5]} scale={4} />
-      </Environment>
+    <Canvas
+      className="!fixed inset-0"
+      dpr={[1, IS_TOUCH ? 1.75 : 2]}
+      camera={{ position: [0, 1.2, 8.5], fov: 42, near: 0.5, far: 60 }}
+      gl={{ antialias: true, stencil: false, toneMapping: THREE.NeutralToneMapping }}
+      resize={{ debounce: { scroll: 50, resize: 180 } }}
+    >
+      <color attach="background" args={[STAGE.backdrop]} />
+      <fog attach="fog" args={[STAGE.backdrop, 9, 19]} />
+      <hemisphereLight args={["#fff3df", "#b3262c", 1.6]} />
+      <directionalLight position={[2, 6, 6]} intensity={1.8} color="#fff2dc" />
       <Orbit />
-      <Sparkles count={90} scale={[14, 6, 10]} size={2.4} speed={0.3} opacity={0.6} color="#a99bff" />
-      <EffectComposer multisampling={4} enableNormalPass={false}>
-        <Bloom mipmapBlur intensity={1.1} luminanceThreshold={0.95} radius={0.75} />
-        <Vignette offset={0.25} darkness={0.75} />
-      </EffectComposer>
     </Canvas>
   );
 }

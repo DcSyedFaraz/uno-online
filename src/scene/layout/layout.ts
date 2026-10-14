@@ -8,6 +8,8 @@ export interface TableDims {
   rx: number;
   rz: number;
   portrait: boolean;
+  /** short landscape screens (phones): bigger hand, tighter framing */
+  compact: boolean;
   deck: THREE.Vector3;
   discard: THREE.Vector3;
 }
@@ -17,13 +19,14 @@ export const TABLE_RZ = 3.3;
 
 /**
  * The table keeps the same shape on every screen; only the camera adapts.
- * `portrait` switches the camera and hand layout for phones.
+ * `portrait` (narrow desktop windows) and `compact` (landscape phones) tune the camera and hand.
  */
-export function tableDims(aspect: number): TableDims {
+export function tableDims(aspect: number, compact = false): TableDims {
   return {
     rx: TABLE_RX,
     rz: TABLE_RZ,
     portrait: aspect < 0.9,
+    compact: compact && aspect >= 0.9,
     deck: new THREE.Vector3(-1.05, 0, -0.15),
     discard: new THREE.Vector3(1.0, 0, -0.15),
   };
@@ -60,7 +63,8 @@ export function computeSeats(players: PublicPlayer[], you: string | null, d: Tab
     const p = players[(me + rel) % n];
     const angle = rel === 0 ? Math.PI / 2 : angles[rel - 1];
     const chip = ellipsePoint(d, angle, rel === 0 ? 0.96 : d.portrait ? 1.0 : 1.06, 0.05);
-    const fan = ellipsePoint(d, angle, rel === 0 ? 0.62 : 0.76, 0.03);
+    // opponents hold their cards a little inside the rim, clear of their avatar chip
+    const fan = ellipsePoint(d, angle, rel === 0 ? 0.62 : 0.7, 0.03);
     const yaw = Math.atan2(fan.x, fan.z);
     seats.set(p.id, { pid: p.id, rel, angle, chip, fan, yaw });
   }
@@ -79,7 +83,7 @@ function opponentAngles(k: number, d: TableDims): number[] {
   const inset = k <= 3 ? 30 : 4;
   const start = deg(180 - extra + inset);
   const end = deg(360 + extra - inset);
-  const squash = d.portrait ? 0.8 : 0.62;
+  const squash = d.portrait ? 0.8 : d.compact ? 0.5 : 0.62;
   const N = 240;
   const cum: number[] = [0];
   let px = Math.cos(start) * d.rx;
@@ -128,6 +132,45 @@ export function flatFaceDown(yaw: number, out = new THREE.Quaternion()) {
   return out.multiply(qa);
 }
 
+// ── opponents' hands: standing up, backs to the table, like a real hand seen from across ──
+
+/** Size of an opponent's cards relative to a hand card. */
+export const SEAT_CARD_SCALE = 0.92;
+/** How far the held cards lean back toward their owner. */
+const HAND_LEAN = 0.32;
+const tmpN = new THREE.Vector3();
+
+/**
+ * A card held upright by the player at `yaw`: its face toward them (outward), its back toward
+ * the table, leaning back a little and fanned by `roll` in its own plane.
+ */
+export function standingBack(yaw: number, roll = 0, out = new THREE.Quaternion()) {
+  qa.setFromAxisAngle(Y, yaw);
+  qb.setFromAxisAngle(X, HAND_LEAN);
+  out.copy(qa).multiply(qb);
+  qa.setFromAxisAngle(Z, roll);
+  return out.multiply(qa);
+}
+
+/** Center of a seat's held hand (where cards fly to and from). */
+export function seatHandCenter(seat: Seat, out = new THREE.Vector3()) {
+  return out.copy(seat.fan).setY(0.04 + ((CARD_H * SEAT_CARD_SCALE) / 2) * Math.cos(HAND_LEAN));
+}
+
+/** Card `i` of `n` in a seat's held fan: spread along the table edge, outer cards tilted and lower. */
+export function seatCardSlot(seat: Seat, i: number, n: number, outPos: THREE.Vector3, outQuat: THREE.Quaternion) {
+  const spread = Math.min(0.2, 1.7 / Math.max(1, n));
+  const off = (i - (n - 1) / 2) * spread;
+  seatHandCenter(seat, outPos);
+  // along the edge tangent (the card's own x axis), then a hair outward per card so neighbours never z-fight
+  outPos.x += Math.cos(seat.yaw) * off;
+  outPos.z -= Math.sin(seat.yaw) * off;
+  tmpN.set(Math.sin(seat.yaw), 0, Math.cos(seat.yaw));
+  outPos.addScaledVector(tmpN, i * 0.012);
+  outPos.y -= off * off * 0.35;
+  standingBack(seat.yaw, -off * 0.55, outQuat);
+}
+
 /** Stable pseudo-random number in [0,1) from a card id (for pile scatter). */
 export function hash01(id: string, salt = 0): number {
   let h = 2166136261 ^ salt;
@@ -148,26 +191,33 @@ const TILT = new THREE.Quaternion();
  */
 export function discardSlot(d: TableDims, cardId: string, index: number, outPos: THREE.Vector3, outQuat: THREE.Quaternion, top = false) {
   if (top) {
-    const tilt = d.portrait ? 0.4 : 0.55;
+    const tilt = d.portrait ? 0.4 : d.compact ? 0.38 : 0.55;
     // raise it by half its tilted height so the near edge never sinks into the table
-    const lift = ((CARD_H * PILE_SCALE) / 2) * Math.sin(tilt) + 0.14 + index * 0.006;
+    const lift = ((CARD_H * PILE_SCALE) / 2) * Math.sin(tilt) + 0.07 + index * 0.006;
     outPos.set(d.discard.x, lift, d.discard.z + 0.1);
     flatFaceUp((hash01(cardId) - 0.5) * 0.18, outQuat);
     TILT.setFromAxisAngle(X, tilt);
     outQuat.premultiply(TILT);
     return;
   }
-  const a = (hash01(cardId) - 0.5) * 1.1;
-  outPos.set(d.discard.x + (hash01(cardId, 1) - 0.5) * 0.28, 0.02 + index * 0.006, d.discard.z + (hash01(cardId, 2) - 0.5) * 0.28);
+  // a tidy stack: small turns and offsets, so it reads as one pile
+  const a = (hash01(cardId) - 0.5) * 0.45;
+  outPos.set(d.discard.x + (hash01(cardId, 1) - 0.5) * 0.12, 0.045 + index * 0.006, d.discard.z + (hash01(cardId, 2) - 0.5) * 0.12);
   flatFaceUp(a, outQuat);
 }
 
 // ── your hand (camera space) ──
 
+/** Vertical field of view the camera uses for this layout. */
+export function cameraFov(portrait: boolean) {
+  return portrait ? 46 : 38;
+}
+
 export interface HandParams {
   aspect: number;
   fovDeg: number;
   portrait: boolean;
+  compact: boolean;
 }
 
 export const HAND_DIST = 4.2;
@@ -181,21 +231,36 @@ export interface HandSlot {
 /** Gap in depth between neighbouring hand cards (keeps halos/overlays from bleeding into neighbours). */
 export const HAND_Z_STEP = 0.02;
 
-/** Fanned arc at the bottom of the screen, in camera-local coordinates. */
-export function handSlot(n: number, i: number, hp: HandParams, lift: number, out: HandSlot) {
+function handMetrics(hp: HandParams) {
   const vh = 2 * HAND_DIST * Math.tan(THREE.MathUtils.degToRad(hp.fovDeg) / 2);
   const vw = vh * hp.aspect;
-  // card height as a share of the screen, capped so a 7-card hand fits comfortably
-  const s = Math.min((vh * (hp.portrait ? 0.2 : 0.235)) / CARD_H, (vw * (hp.portrait ? 0.26 : 0.13)) / CARD_W);
-  const maxWidth = vw * (hp.portrait ? 0.94 : 0.7);
+  // card height as a share of the screen; phones in landscape get big cards like a real hand
+  const hShare = hp.portrait ? 0.2 : hp.compact ? 0.3 : 0.235;
+  const wShare = hp.portrait ? 0.2 : hp.compact ? 0.16 : 0.13;
+  const s = Math.min((vh * hShare) / CARD_H, (vw * wShare) / CARD_W);
+  // leave the corners free for your badge and the UNO! button
+  const maxWidth = vw * (hp.portrait ? 0.7 : hp.compact ? 0.62 : 0.7);
+  const margin = vh * (hp.compact ? 0.02 : 0.03);
+  return { vh, vw, s, maxWidth, margin };
+}
+
+/** Fanned arc at the bottom of the screen, in camera-local coordinates. */
+export function handSlot(n: number, i: number, hp: HandParams, lift: number, out: HandSlot) {
+  const { vh, vw, s, maxWidth, margin } = handMetrics(hp);
   const natural = CARD_W * s * 0.7;
   const spacing = n > 1 ? Math.min(natural, (maxWidth - CARD_W * s) / (n - 1)) : 0;
   const x = (i - (n - 1) / 2) * spacing;
   const half = ((n - 1) / 2) * spacing;
   const norm = half > 0 ? x / Math.max(half, vw * 0.22) : 0;
-  const bottom = -vh / 2 + vh * 0.03;
+  const bottom = -vh / 2 + margin;
   const y = bottom + (CARD_H * s) / 2 + (1 - norm * norm) * 0.09 * s;
   out.pos.set(x, y + lift * s, -HAND_DIST + i * HAND_Z_STEP + lift * 0.05);
   out.rotZ = -norm * 0.13;
   out.scale = s;
+}
+
+/** Screen pixels from the bottom edge to the top of the hand (with a playable card's lift). */
+export function handTopPx(hp: HandParams, heightPx: number) {
+  const { vh, s, margin } = handMetrics(hp);
+  return ((margin + CARD_H * s + 0.15 * s) / vh) * heightPx;
 }

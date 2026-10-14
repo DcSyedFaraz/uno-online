@@ -14,9 +14,9 @@ function update(patch: Patch) {
 
 function Info({ text }: { text: string }) {
   return (
-    <span className="group relative ml-1.5 inline-grid h-4 w-4 cursor-help place-items-center rounded-full bg-white/10 text-[10px] text-white/60">
+    <span className="group relative ml-1.5 inline-grid h-4 w-4 cursor-help place-items-center rounded-full bg-white/25 text-[10px] font-bold text-white">
       ?
-      <span className="pointer-events-none absolute bottom-6 left-1/2 z-50 w-60 -translate-x-1/2 rounded-xl bg-[#14132a] p-3 text-left text-xs font-normal leading-relaxed text-white/85 opacity-0 shadow-2xl ring-1 ring-white/10 transition-opacity group-hover:opacity-100">
+      <span className="pointer-events-none absolute bottom-6 left-1/2 z-50 w-60 -translate-x-1/2 rounded-xl bg-white p-3 text-left text-xs font-medium leading-relaxed text-ink opacity-0 shadow-[0_4px_0_rgba(10,30,90,0.3),0_14px_30px_-10px_rgba(0,0,0,0.4)] transition-opacity group-hover:opacity-100">
         {text}
       </span>
     </span>
@@ -32,7 +32,7 @@ function Toggle({ on, disabled, onChange, label }: { on: boolean; disabled: bool
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!on)}
-      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 disabled:cursor-not-allowed ${on ? "bg-accent shadow-[0_0_16px_rgba(124,92,255,0.7)]" : "bg-white/12"}`}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 disabled:cursor-not-allowed ${on ? "bg-accent shadow-[inset_0_0_0_2px_rgba(255,255,255,0.45)]" : "bg-[#133f99]/70"}`}
     >
       <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all duration-200 ${on ? "left-[22px]" : "left-0.5"}`} />
     </button>
@@ -51,7 +51,7 @@ function Segmented<T extends string | number>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-1 rounded-xl bg-black/30 p-1">
+    <div className="flex flex-wrap gap-1 rounded-xl bg-[#133f99]/60 p-1">
       {options.map((o) => (
         <button
           key={String(o.value)}
@@ -59,7 +59,7 @@ function Segmented<T extends string | number>({
           disabled={disabled && o.value !== value}
           onClick={() => !disabled && onChange(o.value)}
           className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
-            o.value === value ? "bg-white text-black shadow" : "text-white/70 hover:bg-white/10 disabled:opacity-40"
+            o.value === value ? "bg-white text-ink shadow" : "text-white/85 hover:bg-white/15 disabled:opacity-50"
           }`}
         >
           {o.label}
@@ -72,7 +72,7 @@ function Segmented<T extends string | number>({
 function Row({ label, help, children }: { label: string; help?: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 py-2">
-      <div className="flex items-center text-sm text-white/85">
+      <div className="flex items-center text-sm font-medium text-white">
         {label}
         {help && <Info text={help} />}
       </div>
@@ -83,8 +83,8 @@ function Row({ label, help, children }: { label: string; help?: string; children
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl bg-white/[0.035] px-4 py-2 ring-1 ring-white/5">
-      <div className="pt-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-white/40">{title}</div>
+    <div className="rounded-2xl bg-white/10 px-4 py-2 ring-1 ring-white/20 short:px-3">
+      <div className="pt-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-white/70">{title}</div>
       {children}
     </div>
   );
@@ -148,14 +148,14 @@ export function RulesPanel({ settings, editable }: { settings: RuleSettings; edi
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between rounded-2xl bg-gradient-to-r from-accent/20 via-fuchsia-500/10 to-transparent px-4 py-3 text-left ring-1 ring-white/10 transition hover:ring-white/20"
+        className="flex w-full items-center justify-between rounded-2xl bg-gold px-4 py-3 text-left text-ink shadow-[0_4px_0_#a87400] transition hover:brightness-105"
         aria-expanded={open}
       >
         <div>
           <div className="font-display text-sm font-bold tracking-wide">More rules</div>
-          <div className="text-xs text-white/55">{extras.length ? `${extras.length} extra rule${extras.length > 1 ? "s" : ""} on` : "Classic rules — every extra is off"}</div>
+          <div className="text-xs font-medium text-ink/70">{extras.length ? `${extras.length} extra rule${extras.length > 1 ? "s" : ""} on` : "Classic rules — every extra is off"}</div>
         </div>
-        <motion.span animate={{ rotate: open ? 180 : 0 }} className="text-white/60">
+        <motion.span animate={{ rotate: open ? 180 : 0 }} className="text-ink/70">
           ▾
         </motion.span>
       </button>
@@ -211,7 +211,7 @@ export function RulesPanel({ settings, editable }: { settings: RuleSettings; edi
 
             <Group title="Wild +4">
               <div className="flex items-center justify-between gap-3 py-2">
-                <span className="flex items-center text-sm text-white/85">
+                <span className="flex items-center text-sm font-medium text-white">
                   How it works <Info text={RULE_HELP.wild4Mode} />
                 </span>
                 <Segmented

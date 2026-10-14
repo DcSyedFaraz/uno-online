@@ -2,7 +2,9 @@
 
 import * as THREE from "three";
 import { create } from "zustand";
+import { NEON } from "@/brand";
 import type { Card, Color } from "@/engine";
+import type { CalloutSpec } from "./anim/callout";
 import type { Seat, TableDims } from "./layout/layout";
 import { tableDims } from "./layout/layout";
 
@@ -67,6 +69,8 @@ export const sceneRef: {
 };
 
 export const spawnHints = new Map<string, SpawnHint>();
+/** The color picked for each wild played this round (card id → color), so the pile shows it. */
+export const wildColors = new Map<string, Color>();
 /** Last world transform of every card actor (used to launch ghosts from where a card was). */
 export const actorTransforms = new Map<string, { pos: THREE.Vector3; quat: THREE.Quaternion; scale: number }>();
 
@@ -79,7 +83,12 @@ export interface Shout {
   by?: string;
 }
 
+export type Callout = CalloutSpec & { id: number };
+
 interface SceneStore {
+  /** the big "what just happened" headline for action and wild cards */
+  callout: Callout | null;
+  showCallout(c: CalloutSpec, delay?: number): void;
   shouts: Shout[];
   addShout(s: Omit<Shout, "id">): void;
   ghosts: Ghost[];
@@ -95,6 +104,14 @@ interface SceneStore {
 }
 
 export const useScene = create<SceneStore>((set, get) => ({
+  callout: null,
+  showCallout(c, delay = 0) {
+    setTimeout(() => {
+      const id = ids++;
+      set({ callout: { ...c, id } });
+      setTimeout(() => get().callout?.id === id && set({ callout: null }), 2000);
+    }, delay);
+  },
   shouts: [],
   addShout(sh) {
     const id = ids++;
@@ -132,10 +149,4 @@ export const useScene = create<SceneStore>((set, get) => ({
   },
 }));
 
-export const COLOR_HEX: Record<Color | "wild", string> = {
-  red: "#ff3b5c",
-  yellow: "#ffd23f",
-  green: "#2bff88",
-  blue: "#3b9eff",
-  wild: "#b56bff",
-};
+export const COLOR_HEX: Record<Color | "wild", string> = NEON;

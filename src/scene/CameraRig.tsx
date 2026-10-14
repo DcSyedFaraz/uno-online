@@ -5,7 +5,7 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { useUi } from "@/ui/uiStore";
 import { sceneRef } from "./sceneStore";
-import type { TableDims } from "./layout/layout";
+import { cameraFov, type TableDims } from "./layout/layout";
 
 /** Frames the table above the hand, with gentle pointer parallax and impact shake. */
 export function CameraRig({ d }: { d: TableDims }) {
@@ -16,25 +16,28 @@ export function CameraRig({ d }: { d: TableDims }) {
   const aspect = size.width / Math.max(1, size.height);
 
   const base = useMemo(() => {
-    const portrait = d.portrait;
-    const fov = portrait ? 46 : 38;
-    // steeper on phones so the oval fills more of the tall screen
-    const phi = THREE.MathUtils.degToRad(portrait ? 70 : 55);
+    const { portrait, compact } = d;
+    const fov = cameraFov(portrait);
+    // steeper in portrait so the oval fills more of the tall screen; flatter on landscape
+    // phones so the wide, short screen is filled edge to edge
+    const phi = THREE.MathUtils.degToRad(portrait ? 70 : compact ? 40 : 55);
     const vfov = THREE.MathUtils.degToRad(fov);
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * aspect);
     // fit the table plus the avatar chips around it horizontally…
-    const dw = (d.rx * (portrait ? 1.34 : 1.24)) / Math.tan(hfov / 2);
-    // …and vertically into the area above the hand
-    const dh = (d.rz * 1.22 * Math.sin(phi) + 0.5) / Math.tan(vfov * 0.33);
+    const dw = (d.rx * (portrait ? 1.34 : compact ? 1.3 : 1.24)) / Math.tan(hfov / 2);
+    // …and vertically into the area above the hand. Phones: solved numerically so the far chips sit
+    // just under the top bar and the piles at ~43% height; the near rim tucks under the big hand.
+    const dh = compact ? 9.9 : (d.rz * 1.22 * Math.sin(phi) + 0.5) / Math.tan(vfov * 0.33);
     const dist = Math.max(dw, dh);
-    const target = new THREE.Vector3(0, 0, d.rz * (portrait ? 0.42 : 0.32));
+    const target = new THREE.Vector3(0, 0, portrait ? d.rz * 0.42 : compact ? 0.64 : d.rz * 0.32);
     const pos = target.clone().add(new THREE.Vector3(0, Math.sin(phi), Math.cos(phi)).multiplyScalar(dist));
     return { fov, pos, target };
   }, [d, aspect]);
 
   useEffect(() => {
     camera.fov = base.fov;
-    camera.near = 0.1;
+    // a far-ish near plane keeps depth precision high (no flicker between the felt and table top)
+    camera.near = 1.2;
     camera.far = 120;
     camera.position.copy(base.pos);
     camera.lookAt(base.target);

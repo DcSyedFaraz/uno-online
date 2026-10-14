@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
+// the in-game turn prompt (not the lobby's "Turn timer" label, which also contains "turn")
+const IN_GAME = /your turn|'s turn|choose a color|stack it|faces \+/i;
+
 async function profile(page: Page, name: string) {
   const input = page.getByPlaceholder("Guest name");
   await input.fill(name);
@@ -36,8 +39,8 @@ test("host and guest play together through a share link", async ({ browser }) =>
   // add a bot and start
   await host.getByRole("button", { name: "+ Add bot" }).click();
   await host.getByRole("button", { name: "Start game" }).click();
-  await expect(host.getByText(/turn|choose a color/i).first()).toBeVisible();
-  await expect(guest.getByText(/turn|choose a color/i).first()).toBeVisible();
+  await expect(host.getByText(IN_GAME).first()).toBeVisible();
+  await expect(guest.getByText(IN_GAME).first()).toBeVisible();
 
   // hidden information: each player only receives their own hand
   const snap = async (p: Page) => p.evaluate(async (c) => (await fetch(`/api/rooms/${c}`)).json(), code);
@@ -64,7 +67,7 @@ test("host and guest play together through a share link", async ({ browser }) =>
   // a refresh keeps your seat and your hand
   const before = (await snap(guest)).msg.priv.hand.length;
   await guest.reload();
-  await expect(guest.getByText(/turn|choose a color/i).first()).toBeVisible();
+  await expect(guest.getByText(IN_GAME).first()).toBeVisible();
   const after = await snap(guest);
   expect(after.member).toBe(true);
   expect(Math.abs(after.msg.priv.hand.length - before)).toBeLessThanOrEqual(4);

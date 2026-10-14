@@ -7,8 +7,9 @@ import type { Card, GameEvent, PublicView } from "@/engine";
 import { isDrawCard, isWild } from "@/engine/cards";
 import { onBatch, playerName, useGame, type Batch } from "@/client/store/game-store";
 import { CARD_H } from "../cards/cardGeometry";
-import { computeSeats, flatFaceDown, flatFaceUp, PILE_SCALE, tableDims } from "../layout/layout";
-import { actorTransforms, COLOR_HEX, sceneRef, spawnHints, useScene, type FaceSpec, type Ghost } from "../sceneStore";
+import { computeSeats, flatFaceDown, flatFaceUp, PILE_SCALE, SEAT_CARD_SCALE, seatHandCenter, standingBack, tableDims } from "../layout/layout";
+import { actorTransforms, COLOR_HEX, sceneRef, spawnHints, useScene, wildColors, type FaceSpec, type Ghost } from "../sceneStore";
+import { describeMove } from "./callout";
 
 /**
  * Turns server events into choreography: where new cards fly in from, transient
@@ -16,14 +17,16 @@ import { actorTransforms, COLOR_HEX, sceneRef, spawnHints, useScene, type FaceSp
  * Runs before each new view is applied, so it can look at both old and new state.
  */
 
-const SEAT_SCALE = 0.62;
+const SEAT_SCALE = SEAT_CARD_SCALE;
 
+/** Middle of a player's held hand. */
 function seatPos(pid: string): THREE.Vector3 {
   const s = sceneRef.seats.get(pid);
-  return s ? s.fan.clone() : new THREE.Vector3(0, 0, sceneRef.dims.rz);
+  return s ? seatHandCenter(s) : new THREE.Vector3(0, 0, sceneRef.dims.rz);
 }
-function seatYaw(pid: string) {
-  return sceneRef.seats.get(pid)?.yaw ?? 0;
+/** How a card sits in that player's hand (upright, back to the table). */
+function seatQuat(pid: string) {
+  return standingBack(sceneRef.seats.get(pid)?.yaw ?? 0);
 }
 
 function ghost(from: THREE.Vector3, to: THREE.Vector3, opts: Partial<Omit<Ghost, "id" | "born">> = {}): Omit<Ghost, "id" | "born"> {
@@ -52,8 +55,8 @@ function cardFlyGhosts(fromPid: string, toPid: string, count: number, delay: num
   for (let i = 0; i < n; i++) {
     gs.push(
       ghost(seatPos(fromPid), seatPos(toPid), {
-        fromQuat: flatFaceDown(seatYaw(fromPid)),
-        toQuat: flatFaceDown(seatYaw(toPid)),
+        fromQuat: seatQuat(fromPid),
+        toQuat: seatQuat(toPid),
         fromScale: fromPid === you ? 1 : SEAT_SCALE,
         toScale: toPid === you ? 1 : SEAT_SCALE,
         delay: delay + i * 45,
@@ -70,7 +73,7 @@ function myHandGhosts(ids: string[], toPid: string, delay: number) {
     const t = actorTransforms.get(id);
     return ghost(t?.pos.clone() ?? seatPos(sceneRef.you ?? ""), seatPos(toPid), {
       fromQuat: t?.quat.clone() ?? flatFaceUp(0),
-      toQuat: flatFaceDown(seatYaw(toPid)),
+      toQuat: seatQuat(toPid),
       fromScale: t?.scale ?? 1,
       toScale: SEAT_SCALE,
       delay: delay + i * 35,
@@ -92,7 +95,7 @@ function cardSfx(card: Card) {
 export function choreograph(b: Batch) {
   const { ev, prev, next, prevPriv, nextPriv, you } = b;
   // keep seat positions current even if the canvas hasn't rendered this state yet
-  if (typeof window !== "undefined") sceneRef.dims = tableDims(window.innerWidth / Math.max(1, window.innerHeight));
+  if (typeof window !== "undefined") sceneRef.dims = tableDims(window.innerWidth / Math.max(1, window.innerHeight), window.innerHeight < 520);
   sceneRef.seats = computeSeats(next.players, you, sceneRef.dims);
   sceneRef.you = you;
   const scene = useScene.getState();
@@ -107,6 +110,7 @@ export function choreograph(b: Batch) {
   for (const e of ev) {
     switch (e.t) {
       case "deal": {
+        wildColors.clear();
         const order = next.players.filter((p) => p.status === "active");
         const per = Math.max(16, Math.min(55, 1700 / Math.max(1, order.length * (next.settings.handSize || 7))));
         const handIds = nextPriv?.hand.map((c) => c.id) ?? [];
@@ -120,7 +124,7 @@ export function choreograph(b: Batch) {
               const id = handIds[r];
               if (id) spawnHints.set(id, { from: "deck", delay: d });
             } else if (r < 10) {
-              ghosts.push(ghost(deckTop(), seatPos(p.id), { toQuat: flatFaceDown(seatYaw(p.id)), delay: d, duration: 420 }));
+              ghosts.push(ghost(deckTop(), seatPos(p.id), { toQuat: seatQuat(p.id), delay: d, duration: 420 }));
             }
             if (k % 3 === 0) playSfx("deal", d);
           }
@@ -152,7 +156,7 @@ export function choreograph(b: Batch) {
           (e.cards ?? []).forEach((c, i) => spawnHints.set(c.id, { from: "deck", delay: t + i * 85 }));
         } else {
           for (let i = 0; i < Math.min(e.count, 10); i++) {
-            ghosts.push(ghost(deckTop(), seatPos(e.pid), { toQuat: flatFaceDown(seatYaw(e.pid)), delay: t + i * 70 }));
+            ghosts.push(ghost(deckTop(), seatPos(e.pid), { toQuat: seatQuat(e.pid), delay: t + i * 70 }));
           }
         }
         for (let i = 0; i < Math.min(e.count, 5); i++) playSfx("draw", t + i * 80);
@@ -163,13 +167,15 @@ export function choreograph(b: Batch) {
         t += Math.min(e.count, 6) * 75 + 120;
         break;
       }
-      case "color":
+      case "color": {
         scene.addPulse("colorburst", discardPos, COLOR_HEX[e.color], t + 200);
-        if (e.pid && e.pid !== you) game.toast(`${name(e.pid)} picked ${e.color.toUpperCase()}`, "info");
+        // the wild on top of the pile takes the picked color
+        const top = next.discardTop[next.discardTop.length - 1];
+        if (top && top.color === null) wildColors.set(top.id, e.color);
         break;
+      }
       case "skip":
-        if (e.pids.length > 2) game.toast(`${name(next.turnPlayerId)} skipped everyone!`, "warn");
-        e.pids.forEach((pid) => scene.addSeatFx(pid, "SKIP", "white", false, t + 250));
+        e.pids.forEach((pid) => scene.addSeatFx(pid, "⊘ SKIP", "white", true, t + 250));
         playSfx("skip", t + 250);
         break;
       case "reverse":
@@ -209,7 +215,6 @@ export function choreograph(b: Batch) {
             });
           }
         });
-        game.toast("Everyone passes their hand!", "info");
         playSfx("swap", t + 150);
         t += 700;
         break;
@@ -229,7 +234,7 @@ export function choreograph(b: Batch) {
               ghost(deckTop(), seatPos(e.pid), {
                 face: c,
                 fromQuat: flatFaceUp(0),
-                toQuat: flatFaceUp(seatYaw(e.pid)),
+                toQuat: flatFaceUp(sceneRef.seats.get(e.pid)?.yaw ?? 0),
                 delay: t + i * 170,
                 duration: 600,
               }),
@@ -237,15 +242,10 @@ export function choreograph(b: Batch) {
           playSfx("draw", t + i * 170);
         });
         scene.addSeatFx(e.pid, `+${e.cards.length}`, "red", true, t + e.cards.length * 170);
-        game.toast(`${name(e.pid)} flipped ${e.cards.length} card${e.cards.length === 1 ? "" : "s"} looking for ${e.color.toUpperCase()}`, "warn");
         t += e.cards.length * 170 + 200;
         break;
       }
       case "challenge":
-        game.toast(
-          e.guilty ? `Challenge! ${name(e.offender)} was bluffing and draws instead` : `${name(e.offender)} played fair — ${name(e.victim)} draws 6`,
-          e.guilty ? "good" : "warn",
-        );
         scene.addSeatFx(e.guilty ? e.offender : e.victim, e.guilty ? "BUSTED!" : "FAIR!", e.guilty ? "red" : "blue", true, t);
         break;
       case "uno_call":
@@ -308,6 +308,13 @@ export function choreograph(b: Batch) {
   }
 
   if (ghosts.length) scene.addGhosts(ghosts);
+
+  // one plain-language headline for action and wild cards, shown as the card lands
+  const callout = describeMove(ev, next, you);
+  if (callout) {
+    const byOther = ev.some((e) => e.t === "play" && e.pid !== you);
+    scene.showCallout(callout, byOther ? 380 : 180);
+  }
 
   // your turn cue
   if (next.phase === "playing" && next.turnPlayerId === you && prev?.turnPlayerId !== you) {

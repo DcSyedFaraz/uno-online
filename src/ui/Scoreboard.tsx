@@ -8,6 +8,8 @@ import { sendAction } from "@/client/actions";
 import { useGame } from "@/client/store/game-store";
 import { COLOR_HEX } from "@/scene/sceneStore";
 
+const WILD_SWATCH = `conic-gradient(${COLOR_HEX.red},${COLOR_HEX.yellow},${COLOR_HEX.green},${COLOR_HEX.blue},${COLOR_HEX.red})`;
+
 function CountUp({ to }: { to: number }) {
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -47,47 +49,47 @@ export function Scoreboard() {
   return (
     <AnimatePresence>
       {show && over && (
-        <motion.div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+        <motion.div className="fixed inset-0 z-50 grid place-items-center bg-[#3a0308]/45 p-4 short:p-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
           <motion.div
-            className="glass w-full max-w-lg p-6 text-center"
+            className="glass w-full max-w-lg p-6 text-center short:max-h-[96dvh] short:overflow-y-auto short:p-4"
             initial={{ y: 30, scale: 0.92, opacity: 0 }}
             animate={{ y: 0, scale: 1, opacity: 1 }}
             transition={{ type: "spring", stiffness: 260, damping: 24 }}
           >
-            <div className="text-5xl">{winner?.avatar ?? "🤝"}</div>
-            <div className="font-display mt-2 text-2xl font-black">
+            <div className="text-5xl short:text-3xl">{winner?.avatar ?? "🤝"}</div>
+            <div className="font-display toon-text mt-2 text-2xl font-black text-[#ffd84a] short:mt-1 short:text-xl">
               {winner ? (winner.id === you ? (gameOver ? "You win the game!" : "You win the round!") : `${winner.name} wins${gameOver ? " the game" : ""}!`) : "Round over"}
             </div>
             {points && winner && (
-              <div className="mt-1 text-sm text-white/60">
+              <div className="mt-1 text-sm font-semibold text-white/85">
                 +<CountUp to={lr.points} /> points
               </div>
             )}
-            <div className="mt-5 max-h-[38dvh] space-y-1.5 overflow-y-auto text-left scrollbar-thin">
+            <div className="mt-5 max-h-[38dvh] space-y-1.5 overflow-y-auto text-left scrollbar-thin short:mt-3 short:max-h-[42dvh]">
               {ranked.map((p, i) => {
                 const hand = lr.hands[p.id] ?? [];
                 return (
-                  <div key={p.id} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${p.id === lr.winnerId ? "bg-neon-yellow/10 ring-1 ring-neon-yellow/40" : "bg-white/[0.04]"}`}>
-                    <span className="w-4 text-xs text-white/40">{i + 1}</span>
+                  <div key={p.id} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${p.id === lr.winnerId ? "bg-white/25 ring-[3px] ring-gold" : "bg-white/12"}`}>
+                    <span className="w-4 text-xs font-bold text-white/75">{i + 1}</span>
                     <span className="text-lg">{p.avatar}</span>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold">
                         {p.name}
-                        {p.id === you && <span className="text-white/45"> (you)</span>}
+                        {p.id === you && <span className="text-white/75"> (you)</span>}
                       </div>
                       <div className="flex flex-wrap gap-0.5">
                         {hand.slice(0, 18).map((c) => (
                           <span
                             key={c.id}
                             title={cardLabel(c)}
-                            className="inline-block h-3 w-2 rounded-[2px]"
-                            style={{ background: c.color ? COLOR_HEX[c.color] : "conic-gradient(#ff3b5c,#ffd23f,#2bff88,#3b9eff,#ff3b5c)" }}
+                            className="inline-block h-3 w-2 rounded-[2px] ring-1 ring-white/70"
+                            style={{ background: c.color ? COLOR_HEX[c.color] : WILD_SWATCH }}
                           />
                         ))}
-                        {hand.length > 18 && <span className="text-[10px] text-white/40">+{hand.length - 18}</span>}
+                        {hand.length > 18 && <span className="text-[10px] text-white/75">+{hand.length - 18}</span>}
                       </div>
                     </div>
-                    <div className="text-right text-xs text-white/60">
+                    <div className="text-right text-xs text-white/85">
                       {points ? <div className="font-display text-sm font-bold text-white">{p.score}</div> : null}
                       {hand.length} left · {handPoints(hand)} pts
                     </div>
@@ -95,7 +97,7 @@ export function Scoreboard() {
                 );
               })}
             </div>
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <div className="mt-6 flex flex-wrap justify-center gap-2 short:mt-3">
               {isHost ? (
                 gameOver ? (
                   <>
@@ -117,7 +119,7 @@ export function Scoreboard() {
                   </>
                 )
               ) : (
-                <div className="text-sm text-white/55">Waiting for the host…</div>
+                <div className="text-sm font-semibold text-white/85">Waiting for the host…</div>
               )}
             </div>
           </motion.div>

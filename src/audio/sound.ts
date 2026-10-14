@@ -43,6 +43,10 @@ interface Engine {
   step: number;
   clips: Partial<Record<VoiceLine, AudioBuffer | null>>;
   prefs: { muted: boolean; sfx: number; music: boolean };
+  /** gesture listeners installed (once per page, survives hot reload) */
+  gestureHooked?: boolean;
+  /** speech synthesis has been primed inside a gesture (iOS needs this before it will speak) */
+  speechPrimed?: boolean;
 }
 const E: Engine = ((globalThis as unknown as { __neonoAudio?: Engine }).__neonoAudio ??= {
   ctx: null,
@@ -88,10 +92,40 @@ function ensure(): AudioContext | null {
 /** Call from a click/tap handler so audio is allowed to start. */
 export function unlockAudio() {
   const c = ensure();
-  if (c && c.state === "suspended") void c.resume();
+  if (c && c.state !== "running") void c.resume();
+  primeSpeech();
   if (prefs.music) startMusic();
   preloadVoices();
 }
+
+/** Speak a silent utterance inside a gesture: iOS won't speak later (e.g. someone else's shout) otherwise. */
+function primeSpeech() {
+  if (E.speechPrimed || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  E.speechPrimed = true;
+  try {
+    const u = new SpeechSynthesisUtterance(" ");
+    u.volume = 0;
+    window.speechSynthesis.speak(u);
+  } catch {}
+}
+
+/**
+ * Browsers only start audio inside a user gesture. Any tap or key press on the page unlocks it,
+ * so players who reloaded or never pressed a "sound" button still hear other people's shouts.
+ * Listeners stay on: iOS suspends the context when the app is backgrounded.
+ */
+function hookGestures() {
+  if (E.gestureHooked || typeof window === "undefined") return;
+  E.gestureHooked = true;
+  const onGesture = () => {
+    if (!E.ctx || E.ctx.state !== "running" || !E.speechPrimed) unlockAudio();
+  };
+  for (const type of ["pointerdown", "touchend", "keydown"] as const) window.addEventListener(type, onGesture, { capture: true, passive: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && E.ctx && E.ctx.state !== "running") void E.ctx.resume().catch(() => {});
+  });
+}
+hookGestures();
 
 // ── building blocks ──
 
@@ -134,6 +168,19 @@ function hiss(t: number, dur: number, peak: number, type: BiquadFilterType, f0: 
 
 const N = (semi: number) => 440 * Math.pow(2, (semi - 9) / 12); // semitones from C4-ish
 
+/**
+ * A card landing on the felt: a short swish of air, then a crisp cardstock snap with a soft
+ * table knock under it. No pitched tones, so it sounds like paper rather than a synth drum.
+ */
+function cardSlap(t: number, strength = 1) {
+  const k = strength * (0.85 + Math.random() * 0.3);
+  hiss(t, 0.045, 0.1 * k, "highpass", 2500, 6500, 0.7);
+  const hit = t + 0.04;
+  hiss(hit, 0.022, 0.75 * k, "bandpass", 3400, 2100, 0.8);
+  hiss(hit, 0.055, 0.42 * k, "lowpass", 1100, 280, 0.7);
+  hiss(hit + 0.004, 0.06, 0.3 * k, "bandpass", 210, 150, 1.6);
+}
+
 export function playSfx(name: Sfx, delayMs = 0) {
   if (prefs.muted) return;
   const c = ensure();
@@ -141,16 +188,18 @@ export function playSfx(name: Sfx, delayMs = 0) {
   const t = c.currentTime + delayMs / 1000 + 0.005;
   switch (name) {
     case "play":
-      hiss(t, 0.08, 0.5, "bandpass", 2600, 1800, 0.9);
-      tone("sine", 150, 55, t, 0.12, 0.45);
+      cardSlap(t);
       break;
     case "action":
-      hiss(t, 0.08, 0.45, "bandpass", 2600, 1800, 0.9);
-      tone("sine", 150, 55, t, 0.12, 0.4);
-      tone("square", 880, 1320, t + 0.03, 0.09, 0.08);
+      cardSlap(t, 1.1);
+      // a bright two-note accent so action cards stand out
+      tone("triangle", N(19), N(19), t + 0.06, 0.12, 0.09);
+      tone("triangle", N(24), N(24), t + 0.12, 0.16, 0.08);
       break;
     case "draw":
-      hiss(t, 0.11, 0.3, "bandpass", 1400, 3600, 1.4);
+      // a card sliding off the deck
+      hiss(t, 0.14, 0.22, "bandpass", 900, 2600, 0.9);
+      hiss(t + 0.1, 0.03, 0.12, "highpass", 3000, 3000, 0.7);
       break;
     case "deal":
       hiss(t, 0.035, 0.22, "highpass", 3200, 3200, 0.7);
@@ -159,7 +208,8 @@ export function playSfx(name: Sfx, delayMs = 0) {
       for (let i = 0; i < 12; i++) hiss(t + i * 0.042 + Math.random() * 0.01, 0.035, 0.18, "bandpass", 2800 + Math.random() * 1500, 2800, 1);
       break;
     case "wild":
-      [0, 4, 7, 12].forEach((s, i) => tone("triangle", N(s + 12), N(s + 12), t + i * 0.06, 0.22, 0.16));
+      cardSlap(t, 1.1);
+      [0, 4, 7, 12].forEach((s, i) => tone("triangle", N(s + 12), N(s + 12), t + 0.06 + i * 0.06, 0.22, 0.13));
       break;
     case "skip":
       tone("sawtooth", 620, 180, t, 0.18, 0.09);
@@ -270,8 +320,12 @@ export function speak(text: string, shout = true) {
     u.rate = shout ? 1.35 : 1.15;
     u.pitch = shout ? 1.7 : 1.3;
     u.volume = 1;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
+    const synth = window.speechSynthesis;
+    // Chrome drops an utterance queued in the same tick as cancel(), so only cancel when busy
+    if (synth.speaking || synth.pending) {
+      synth.cancel();
+      setTimeout(() => synth.speak(u), 60);
+    } else synth.speak(u);
   } catch {
     // speech isn't available everywhere; the banner and sound still play
   }

@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import type { Card, Color } from "@/engine";
+import { IS_TOUCH } from "@/client/device";
 import { loadPref, savePref } from "@/client/profile";
 
 export type SortMode = "color" | "number" | "none";
@@ -10,14 +11,14 @@ export type Quality = "auto" | "high" | "medium" | "low";
 interface UiStore {
   sortMode: SortMode;
   quality: Quality;
-  /** resolved tier when quality is auto */
+  /** resolved tier when quality is auto: starts per device and only ever steps down */
   autoTier: "high" | "medium" | "low";
   reduceMotion: boolean;
   settingsOpen: boolean;
   rulesOpen: boolean;
   setSort(m: SortMode): void;
   setQuality(q: Quality): void;
-  setAutoTier(t: "high" | "medium" | "low"): void;
+  stepDownAutoTier(): void;
   setReduceMotion(r: boolean): void;
   setSettingsOpen(o: boolean): void;
   setRulesOpen(o: boolean): void;
@@ -28,7 +29,7 @@ const prefersReduced = () => typeof window !== "undefined" && window.matchMedia?
 export const useUi = create<UiStore>((set) => ({
   sortMode: loadPref<SortMode>("sort", "color"),
   quality: loadPref<Quality>("quality", "auto"),
-  autoTier: "high",
+  autoTier: IS_TOUCH ? "medium" : "high",
   reduceMotion: loadPref<boolean>("reduceMotion", !!prefersReduced()),
   settingsOpen: false,
   rulesOpen: false,
@@ -40,8 +41,9 @@ export const useUi = create<UiStore>((set) => ({
     savePref("quality", quality);
     set({ quality });
   },
-  setAutoTier(autoTier) {
-    set({ autoTier });
+  stepDownAutoTier() {
+    // never steps back up: each change resizes the canvas, and flip-flopping read as flashing
+    set((s) => ({ autoTier: s.autoTier === "high" ? "medium" : "low" }));
   },
   setReduceMotion(reduceMotion) {
     savePref("reduceMotion", reduceMotion);

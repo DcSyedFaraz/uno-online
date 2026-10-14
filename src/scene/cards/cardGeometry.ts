@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import type { Card } from "@/engine";
+import type { Card, Color } from "@/engine";
 import { backTexture, faceTextures } from "./cardTextures";
 
 export const CARD_W = 0.62;
@@ -84,39 +84,30 @@ const faceMats = new Map<string, THREE.MeshStandardMaterial>();
 let backMat: THREE.MeshStandardMaterial | null = null;
 let edgeMat: THREE.MeshStandardMaterial | null = null;
 
-/** Matte, satin-like card stock: no clearcoat, so there's no white glare on the faces. */
-export function faceMaterial(card: Pick<Card, "kind" | "value" | "color">): THREE.MeshStandardMaterial {
-  const key = `${card.color}:${card.kind}:${card.value ?? ""}`;
+/**
+ * Matte, satin-like card stock: no clearcoat, so there's no white glare on the faces.
+ * `tint` recolors a played wild with the color that was picked.
+ */
+export function faceMaterial(card: Pick<Card, "kind" | "value" | "color">, tint: Color | null = null): THREE.MeshStandardMaterial {
+  const wildTint = card.color ? null : tint;
+  const key = `${card.color}:${card.kind}:${card.value ?? ""}:${wildTint ?? ""}`;
   let m = faceMats.get(key);
   if (!m) {
-    const t = faceTextures(card);
-    m = new THREE.MeshStandardMaterial({
-      map: t.map,
-      emissiveMap: t.glow,
-      emissive: new THREE.Color("#ffffff"),
-      emissiveIntensity: card.color ? 0.85 : 0.45,
-      roughness: 0.72,
-      metalness: 0,
-      envMapIntensity: 0.22,
-    });
+    const t = faceTextures(card, wildTint);
+    m = new THREE.MeshStandardMaterial({ map: t.map, roughness: 0.72, metalness: 0 });
     faceMats.set(key, m);
   }
   return m;
 }
 
 export function backMaterial(): THREE.MeshStandardMaterial {
-  return (backMat ??= new THREE.MeshStandardMaterial({
-    map: backTexture(),
-    roughness: 0.6,
-    metalness: 0.05,
-    envMapIntensity: 0.3,
-  }));
+  return (backMat ??= new THREE.MeshStandardMaterial({ map: backTexture(), roughness: 0.68, metalness: 0 }));
 }
 
 export function edgeMaterial(): THREE.MeshStandardMaterial {
-  return (edgeMat ??= new THREE.MeshStandardMaterial({ color: "#e9e6ff", roughness: 0.6 }));
+  return (edgeMat ??= new THREE.MeshStandardMaterial({ color: "#fffdf8", roughness: 0.7 }));
 }
 
-export function cardMaterials(card: Pick<Card, "kind" | "value" | "color"> | null): THREE.Material[] {
-  return [card ? faceMaterial(card) : backMaterial(), backMaterial(), edgeMaterial()];
+export function cardMaterials(card: Pick<Card, "kind" | "value" | "color"> | null, tint: Color | null = null): THREE.Material[] {
+  return [card ? faceMaterial(card, tint) : backMaterial(), backMaterial(), edgeMaterial()];
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { GameEvent, PrivateView, PublicView } from "@/engine";
+import type { Color, GameEvent, PrivateView, PublicView } from "@/engine";
 import type { ChatMessage, GameMessage, Transport } from "@/shared/protocol";
 import { syncClock } from "../clock";
 
@@ -58,6 +58,8 @@ export interface GameStore {
   chatOpen: boolean;
   selectedCardId: string | null;
   pendingPlayId: string | null;
+  /** color picked for the pending card, if it's a wild (so it shows that color right away) */
+  pendingColor: Color | null;
   rejectedCardId: string | null;
   picker: Picker | null;
   toasts: Toast[];
@@ -69,7 +71,7 @@ export interface GameStore {
   addChat(m: ChatMessage): void;
   setChatOpen(open: boolean): void;
   select(cardId: string | null): void;
-  setPending(cardId: string | null): void;
+  setPending(cardId: string | null, color?: Color | null): void;
   reject(cardId: string): void;
   setPicker(p: Picker | null): void;
   toast(text: string, tone?: Toast["tone"]): void;
@@ -93,6 +95,7 @@ const initial = {
   chatOpen: false,
   selectedCardId: null,
   pendingPlayId: null,
+  pendingColor: null,
   rejectedCardId: null,
   picker: null,
   toasts: [],
@@ -156,8 +159,8 @@ export const useGame = create<GameStore>((set, get) => ({
   select(selectedCardId) {
     set({ selectedCardId });
   },
-  setPending(pendingPlayId) {
-    set({ pendingPlayId });
+  setPending(pendingPlayId, pendingColor = null) {
+    set({ pendingPlayId, pendingColor });
   },
   reject(cardId) {
     set({ pendingPlayId: null, rejectedCardId: cardId });

@@ -7,30 +7,33 @@ import * as THREE from "three";
 import type { PublicPlayer } from "@/engine";
 import { UNO_CATCH_GRACE_MS, UNO_WINDOW_MS } from "@/engine/uno";
 import { BOT_DELAY_MIN, BOT_DELAY_SPREAD } from "@/engine/state";
-import { BRAND } from "@/brand";
+import { BRAND, NEON } from "@/brand";
 import { playCard, sendAction } from "@/client/actions";
 import { serverNow } from "@/client/clock";
 import { useGame } from "@/client/store/game-store";
 import { COLOR_HEX, sceneRef, useScene, type FxTone } from "../sceneStore";
 
-/** True on phone-sized screens (keeps chips compact). */
+const isSmall = () => window.innerWidth < 640 || window.innerHeight < 520;
+
+/** True on phone-sized screens, including phones in landscape (keeps chips compact). */
 export function useSmallScreen() {
-  const [small, setSmall] = useState(() => typeof window !== "undefined" && window.innerWidth < 640);
+  const [small, setSmall] = useState(() => typeof window !== "undefined" && isSmall());
   useEffect(() => {
-    const on = () => setSmall(window.innerWidth < 640);
+    const on = () => setSmall(isSmall());
     window.addEventListener("resize", on);
     return () => window.removeEventListener("resize", on);
   }, []);
   return small;
 }
 
+/** Seat-badge text colors; always drawn with the ink outline (`toon-text`), so they read on the red stage. */
 export const TONE: Record<FxTone, string> = {
-  red: "#ff3b5c",
-  gold: "#ffd23f",
-  blue: "#3b9eff",
+  red: "#ff5a52",
+  gold: "#ffd84a",
+  blue: "#5aa8ff",
   white: "#ffffff",
-  green: "#2bff88",
-  wild: "#c58bff",
+  green: "#6fe07d",
+  wild: "#c49bff",
 };
 
 /** Countdown ring that drains as the turn deadline approaches. */
@@ -53,7 +56,7 @@ export function TimerRing({ size, color }: { size: number; color: string }) {
         }
         c.style.strokeDasharray = `${len}`;
         c.style.strokeDashoffset = `${len * (1 - frac)}`;
-        c.style.stroke = frac < 0.25 && deadline ? "#ff3b5c" : color;
+        c.style.stroke = frac < 0.25 && deadline ? NEON.red : color;
       }
       raf = requestAnimationFrame(loop);
     };
@@ -62,9 +65,26 @@ export function TimerRing({ size, color }: { size: number; color: string }) {
   }, [deadline, startedAt, timer, size, color]);
   return (
     <svg width={size} height={size} className="absolute inset-0 -rotate-90 pointer-events-none">
-      <circle cx={size / 2} cy={size / 2} r={size / 2 - 3} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth={3} />
+      <circle cx={size / 2} cy={size / 2} r={size / 2 - 3} fill="none" stroke="rgba(20,33,61,0.18)" strokeWidth={3} />
       <circle ref={circle} cx={size / 2} cy={size / 2} r={size / 2 - 3} fill="none" strokeWidth={3.5} strokeLinecap="round" />
     </svg>
+  );
+}
+
+/** Gold double ring plus glow on the avatar of whoever's turn it is. */
+export const TURN_SHADOW = "0 0 0 3px #ffcf1a, 0 0 0 6px #ffffff, 0 0 26px 10px rgba(255,207,26,0.8), 0 6px 16px rgba(60,0,10,0.45)";
+
+/** Expanding gold ripple behind the active avatar. */
+export function TurnPing() {
+  return <span className="pointer-events-none absolute inset-0 -z-10 animate-ping rounded-full bg-[#ffcf1a] opacity-70" />;
+}
+
+/** Bouncing pointer above the active player. */
+function TurnArrow() {
+  return (
+    <div className="font-display toon-text pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 animate-bounce text-lg leading-none text-[#ffd84a]">
+      ▼
+    </div>
   );
 }
 
@@ -81,7 +101,7 @@ export function SeatFxStack({ pid }: { pid: string }) {
             animate={{ opacity: 1, y: -34, scale: f.big ? 1.15 : 1 }}
             exit={{ opacity: 0, y: -60, scale: 0.9 }}
             transition={{ type: "spring", stiffness: 380, damping: 18 }}
-            className="font-display absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-lg font-black tracking-wide neon-text"
+            className="font-display absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-lg font-black tracking-wide toon-text"
             style={{ color: TONE[f.tone] }}
           >
             {f.text}
@@ -114,7 +134,7 @@ function CatchButton({ pid }: { pid: string }) {
         e.stopPropagation();
         void sendAction({ type: "catch_uno", targetId: pid });
       }}
-      className="hidden absolute -bottom-9 left-1/2 -translate-x-1/2 rounded-full bg-neon-red px-3 py-1 text-xs font-black text-white shadow-[0_0_20px_rgba(255,59,92,0.8)] animate-bounce"
+      className="hidden absolute -bottom-9 left-1/2 -translate-x-1/2 rounded-full bg-neon-red px-3 py-1 text-xs font-black text-white ring-2 ring-white shadow-[0_3px_0_#7d0710] animate-bounce"
     >
       🔨 CATCH!
     </button>
@@ -144,28 +164,34 @@ function Chip({ p }: { p: PublicPlayer }) {
       style={{ transform: "translate3d(-9999px,-9999px,0)" }}
     >
       <div
-        className={`relative flex -translate-x-1/2 -translate-y-1/2 flex-col items-center select-none transition-opacity ${out ? "opacity-40" : ""}`}
+        className={`relative flex -translate-x-1/2 -translate-y-1/2 flex-col items-center select-none transition-[opacity,scale] duration-300 ${out ? "opacity-40" : ""} ${isTurn ? "scale-[1.18]" : ""}`}
         style={{ pointerEvents: swapPick ? "auto" : "none" }}
         onClick={() => swapPick && void playCard(picker.cardId, { swapTargetId: p.id, color: picker.color as never })}
       >
         <SeatFxStack pid={p.id} />
+        {isTurn && <TurnArrow />}
         <div
-          className={`relative grid place-items-center rounded-full transition-all duration-300 ${swapPick ? "cursor-pointer ring-4 ring-neon-wild animate-pulse" : ""}`}
+          className={`relative grid place-items-center rounded-full transition-all duration-300 ${swapPick ? "cursor-pointer animate-pulse" : ""}`}
           style={{
             width: size,
             height: size,
-            background: "radial-gradient(circle at 30% 25%, #2a2647, #0d0c1a)",
-            boxShadow: isTurn ? `0 0 0 2px ${color}, 0 0 28px ${color}` : "0 6px 20px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.12)",
+            background: "radial-gradient(circle at 35% 30%, #ffffff, #d4e4ff)",
+            boxShadow: swapPick
+              ? `0 0 0 3px #ffffff, 0 0 0 7px ${NEON.wild}, 0 6px 16px rgba(60,0,10,0.45)`
+              : isTurn
+                ? TURN_SHADOW
+                : "0 0 0 3px #ffffff, 0 4px 0 rgba(10,40,110,0.35), 0 6px 14px rgba(60,0,10,0.4)",
           }}
         >
+          {isTurn && <TurnPing />}
           {isTurn && <TimerRing size={size} color={color} />}
-          <span className={`leading-none sm:text-[26px] ${crowded ? "text-[17px]" : "text-[20px]"}`} style={{ filter: online ? "none" : "grayscale(1)" }}>
+          <span className={`leading-none ${small ? (crowded ? "text-[17px]" : "text-[20px]") : "text-[26px]"}`} style={{ filter: online ? "none" : "grayscale(1)" }}>
             {p.avatar}
           </span>
           {pub.phase === "playing" && p.status === "active" && (
             <span
-              className="absolute -right-2 -top-1 min-w-[22px] rounded-full px-1.5 text-center text-[11px] font-bold leading-[20px] text-black"
-              style={{ background: p.cardCount === 1 ? "#ffd23f" : "#f2f3ff", boxShadow: p.cardCount === 1 ? "0 0 14px #ffd23f" : undefined }}
+              className="absolute -right-2 -top-1 min-w-[22px] rounded-full px-1.5 text-center text-[11px] font-black leading-[20px] text-[#14213d] ring-2 ring-[#14213d]/15"
+              style={{ background: p.cardCount === 1 ? "#ffcf1a" : "#ffffff", boxShadow: "0 2px 0 rgba(20,33,61,0.35)" }}
             >
               {p.cardCount}
             </span>
@@ -173,18 +199,18 @@ function Chip({ p }: { p: PublicPlayer }) {
           {p.id === pub.hostId && <span className="absolute -left-1.5 -top-2 text-sm">👑</span>}
         </div>
         <div
-          className={`mt-1 truncate rounded-full bg-black/55 px-2 py-0.5 font-semibold text-white/90 backdrop-blur sm:max-w-[110px] sm:text-[11px] ${crowded ? "max-w-[58px] text-[9px]" : "max-w-[84px] text-[10px]"}`}
+          className={`mt-1.5 truncate rounded-full px-2 py-0.5 font-bold ring-2 ring-white/80 ${isTurn ? "bg-gold text-ink shadow-[0_2px_0_#a87400]" : "bg-[#1d5fd6] text-white shadow-[0_2px_0_#133f99]"} ${small ? (crowded ? "max-w-[58px] text-[9px]" : "max-w-[84px] text-[10px]") : "max-w-[110px] text-[11px]"}`}
         >
           {p.isBot && !crowded ? "🤖 " : ""}
           {p.name}
           {p.autopilot ? " · away" : ""}
           {!online ? " · offline" : ""}
         </div>
-        {pub.settings.winMode === "points" && <div className="text-[10px] text-white/50">{p.score} pts</div>}
+        {pub.settings.winMode === "points" && <div className="toon-text text-[10px] font-bold text-white">{p.score} pts</div>}
         {p.saidUno && p.cardCount === 1 && (
-          <div className="font-display mt-0.5 text-[10px] font-black text-neon-yellow neon-text">{BRAND.shout}</div>
+          <div className="font-display mt-0.5 text-[11px] font-black text-[#ffd84a] toon-text">{BRAND.shout}</div>
         )}
-        {out && <div className="font-display text-[10px] font-black text-neon-red">{p.status === "left" ? "LEFT" : "OUT"}</div>}
+        {out && <div className="font-display mt-0.5 rounded-full bg-[#14213d] px-1.5 text-[10px] font-black text-white">{p.status === "left" ? "LEFT" : "OUT"}</div>}
         <div style={{ pointerEvents: "auto" }}>
           <CatchButton pid={p.id} />
         </div>
