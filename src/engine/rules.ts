@@ -1,13 +1,15 @@
 import { z } from "zod";
 
 /**
- * Room rule settings. Defaults are pure classic: every optional rule starts off,
- * and the engine reads each switch independently (there are no bundles).
+ * Room rule settings. CLASSIC_SETTINGS has every optional rule off; new rooms start from
+ * DEFAULT_SETTINGS. The engine reads each switch independently (there are no bundles).
  */
 export const ruleSettingsSchema = z.object({
   // ── basic ──
   handSize: z.number().int().min(5).max(10),
   turnTimerSec: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(45), z.literal(60)]),
+  /** round time limit in minutes (0 = off); at time-up the fewest card points wins */
+  roundTimerMin: z.union([z.literal(0), z.literal(3), z.literal(5), z.literal(7)]),
   winMode: z.enum(["single", "points"]),
   targetPoints: z.number().int().min(100).max(2000),
   deckCount: z.union([z.literal("auto"), z.literal(1), z.literal(2), z.literal(3)]),
@@ -42,6 +44,7 @@ export type ExtraCardKey = keyof RuleSettings["cards"];
 export const CLASSIC_SETTINGS: RuleSettings = {
   handSize: 7,
   turnTimerSec: 30,
+  roundTimerMin: 0,
   winMode: "single",
   targetPoints: 500,
   deckCount: "auto",
@@ -69,8 +72,16 @@ export const CLASSIC_SETTINGS: RuleSettings = {
   afkThreshold: 2,
 };
 
+/** What a new room starts with: classic plus equal-or-higher stacking, Discard All and 3-minute rounds. */
+export const DEFAULT_SETTINGS: RuleSettings = {
+  ...CLASSIC_SETTINGS,
+  roundTimerMin: 3,
+  stacking: "higher",
+  cards: { ...CLASSIC_SETTINGS.cards, discardAll: true },
+};
+
 /** Settings keys that are "basic" (not part of the More rules panel). */
-const BASIC_KEYS = ["handSize", "turnTimerSec", "winMode", "targetPoints", "deckCount"] as const;
+const BASIC_KEYS = ["handSize", "turnTimerSec", "roundTimerMin", "winMode", "targetPoints", "deckCount"] as const;
 
 /** Partial update schema used by the host's update_settings action. */
 export const settingsPatchSchema = ruleSettingsSchema
@@ -78,10 +89,16 @@ export const settingsPatchSchema = ruleSettingsSchema
   .partial()
   .extend({ cards: ruleSettingsSchema.shape.cards.partial().optional() });
 
+/** Applies a patch. Keys missing from `base` (rooms saved before a setting existed) fall back to classic. */
 export function mergeSettings(base: RuleSettings, patch: unknown): RuleSettings {
   const parsed = settingsPatchSchema.parse(patch);
   const { cards, ...rest } = parsed;
-  return ruleSettingsSchema.parse({ ...base, ...rest, cards: { ...base.cards, ...(cards ?? {}) } });
+  return ruleSettingsSchema.parse({
+    ...CLASSIC_SETTINGS,
+    ...base,
+    ...rest,
+    cards: { ...CLASSIC_SETTINGS.cards, ...base.cards, ...(cards ?? {}) },
+  });
 }
 
 /** Keep the basic settings, reset every optional rule back to classic. */

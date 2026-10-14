@@ -74,6 +74,8 @@ export interface RoundResult {
   points: number;
   /** every player's leftover hand, revealed at round end */
   hands: Record<string, Card[]>;
+  /** the round clock ran out (the fewest card points won) */
+  timeUp?: boolean;
 }
 
 export interface GameState {
@@ -99,6 +101,8 @@ export interface GameState {
   /** epoch ms when the current turn auto-resolves (AFK timeout or bot pacing); null = never */
   deadline: number | null;
   turnStartedAt: number;
+  /** epoch ms when the round clock runs out; null = no time limit (or not playing) */
+  roundEndsAt: number | null;
   totalCards: number;
   nextCardId: number;
   lastRound: RoundResult | null;
@@ -150,7 +154,8 @@ export type GameEvent =
   | { t: "eliminated"; pid: string }
   | { t: "reshuffle"; count: number }
   | { t: "timeout"; pid: string }
-  | { t: "round_over"; winnerId: string | null; points: number }
+  | { t: "time_up" }
+  | { t: "round_over"; winnerId: string | null; points: number; timeUp?: boolean }
   | { t: "game_over"; winnerId: string | null }
   | { t: "player_joined"; pid: string }
   | { t: "player_left"; pid: string }

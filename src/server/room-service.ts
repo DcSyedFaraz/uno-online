@@ -3,6 +3,7 @@ import {
   applyAction,
   createGame,
   cryptoRng,
+  dueAt,
   eventsFor,
   privateView,
   publicView,
@@ -97,11 +98,12 @@ export async function perform(code: string, actorId: string, action: Action): Pr
   throw new HttpError(409, "The table is busy — try again");
 }
 
-/** Called by clients when a turn deadline passes (AFK timeout or bot move). */
+/** Called by clients when a turn deadline (AFK timeout or bot move) or the round clock runs out. */
 export async function tick(code: string): Promise<{ applied: boolean; v: number }> {
   const rec = await loadRoom(code);
   const now = Date.now();
-  if (rec.state.phase !== "playing" || rec.state.deadline === null || now < rec.state.deadline - 50) {
+  const due = dueAt(rec.state);
+  if (rec.state.phase !== "playing" || due === null || now < due - 50) {
     return { applied: false, v: rec.version };
   }
   try {

@@ -1,4 +1,4 @@
-import { CLASSIC_SETTINGS, type RuleSettings } from "./rules";
+import { DEFAULT_SETTINGS, type RuleSettings } from "./rules";
 import { shuffle } from "./rng";
 import type { Card, Ctx, DrawReason, GameState, PlayerState, TurnState } from "./types";
 
@@ -26,7 +26,7 @@ export function newPlayer(info: PlayerInfo, isBot = false): PlayerState {
   };
 }
 
-export function createGame(host: PlayerInfo, settings: RuleSettings = CLASSIC_SETTINGS): GameState {
+export function createGame(host: PlayerInfo, settings: RuleSettings = DEFAULT_SETTINGS): GameState {
   return {
     phase: "lobby",
     round: 0,
@@ -45,6 +45,7 @@ export function createGame(host: PlayerInfo, settings: RuleSettings = CLASSIC_SE
     unoWindow: null,
     deadline: null,
     turnStartedAt: 0,
+    roundEndsAt: null,
     totalCards: 0,
     nextCardId: 0,
     lastRound: null,
@@ -145,7 +146,21 @@ export function advanceTurn(ctx: Ctx, steps = 1, turn: TurnState = { kind: "play
 export const BOT_DELAY_MIN = 900;
 export const BOT_DELAY_SPREAD = 900;
 
-/** Bots/autopilot move after a short human-like delay; humans get the turn timer (if any). */
+/** The last stretch of a timed round, where turns run twice as fast. */
+export const FINAL_STRETCH_MS = 60_000;
+
+export function inFinalStretch(state: Pick<GameState, "roundEndsAt">, now: number): boolean {
+  return state.roundEndsAt != null && now >= state.roundEndsAt - FINAL_STRETCH_MS;
+}
+
+/** When the room next needs a tick: the turn deadline or the round clock, whichever comes first. */
+export function dueAt(s: { deadline: number | null; roundEndsAt?: number | null }): number | null {
+  const end = s.roundEndsAt ?? null;
+  if (s.deadline === null) return end;
+  return end === null ? s.deadline : Math.min(s.deadline, end);
+}
+
+/** Bots/autopilot move after a short human-like delay; humans get the turn timer (if any). Both halve in the final stretch. */
 export function scheduleDeadline(ctx: Ctx) {
   const { state } = ctx;
   if (state.phase !== "playing") {
@@ -153,10 +168,11 @@ export function scheduleDeadline(ctx: Ctx) {
     return;
   }
   const p = currentPlayer(state);
+  const speed = inFinalStretch(state, ctx.now) ? 2 : 1;
   if (p.isBot || p.autopilot) {
-    state.deadline = ctx.now + BOT_DELAY_MIN + Math.floor(ctx.rng() * BOT_DELAY_SPREAD);
+    state.deadline = ctx.now + Math.floor((BOT_DELAY_MIN + Math.floor(ctx.rng() * BOT_DELAY_SPREAD)) / speed);
   } else if (state.settings.turnTimerSec > 0) {
-    state.deadline = ctx.now + state.settings.turnTimerSec * 1000;
+    state.deadline = ctx.now + (state.settings.turnTimerSec * 1000) / speed;
   } else {
     state.deadline = null;
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { dueAt } from "@/engine/state";
 import type { ChatKind } from "@/shared/protocol";
 import { api, ApiError } from "../api";
 import { serverNow } from "../clock";
@@ -76,11 +77,11 @@ export function useRoom(code: string) {
 }
 
 /**
- * Turn deadlines (AFK timeouts and bot moves) are resolved by clients poking the server.
- * The connected human in the lowest seat goes first; everyone else is a backup.
+ * Turn deadlines (AFK timeouts and bot moves) and the round clock are resolved by clients
+ * poking the server. The connected human in the lowest seat goes first; everyone else is a backup.
  */
 function useTicker(code: string) {
-  const deadline = useGame((s) => s.pub?.deadline ?? null);
+  const deadline = useGame((s) => (s.pub ? dueAt(s.pub) : null));
   const version = useGame((s) => s.version);
   const leaderRef = useRef(false);
 

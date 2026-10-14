@@ -19,11 +19,12 @@ describe("stacking", () => {
   it("same: +2 on +2 adds up, the next player takes the total", () => {
     const a = card("draw2", "red");
     const b = card("draw2", "blue");
+    const c = card("draw2", "yellow");
     const g = new Game(
       arrange(game({ stacking: "same" }), {
         turn: "p0",
         top: num("red", 5),
-        hands: { p0: [a, num("red", 1)], p1: [b, num("green", 1)], p2: [num("yellow", 3)] },
+        hands: { p0: [a, num("red", 1)], p1: [b, num("green", 1)], p2: [c, num("yellow", 3)] },
       }),
     );
     g.act("p0", { type: "play", cardId: a.id });
@@ -34,8 +35,9 @@ describe("stacking", () => {
     g.act("p1", { type: "play", cardId: b.id });
     expect(g.state.drawStack).toBe(4);
     expect(g.turnId).toBe("p2");
+    // holding a +2, p2 may still choose to take it
     g.act("p2", { type: "take_penalty" });
-    expect(g.hand("p2")).toHaveLength(5);
+    expect(g.hand("p2")).toHaveLength(6);
     expect(g.turnId).toBe("p0");
     expect(g.state.drawStack).toBe(0);
   });
@@ -55,7 +57,7 @@ describe("stacking", () => {
       arrange(game({ stacking: "mixed" }), {
         turn: "p0",
         top: num("red", 5),
-        hands: { p0: [a, num("red", 1)], p1: [b, num("green", 1)], p2: [num("yellow", 3)] },
+        hands: { p0: [a, num("red", 1)], p1: [b, num("green", 1)], p2: [card("draw2", "yellow"), num("yellow", 3)] },
       }),
     );
     g.act("p0", { type: "play", cardId: a.id, color: "green" });
@@ -72,7 +74,7 @@ describe("stacking", () => {
       arrange(game({ stacking: "higher", cards: { wild6: true, wild10: true } }), {
         turn: "p0",
         top: num("red", 5),
-        hands: { p0: [six, num("red", 1)], p1: [two, ten, num("green", 1)], p2: [num("yellow", 3)] },
+        hands: { p0: [six, num("red", 1)], p1: [two, ten, num("green", 1)], p2: [card("wild10"), num("yellow", 3)] },
       }),
     );
     g.act("p0", { type: "play", cardId: six.id, color: "red" });
@@ -94,10 +96,9 @@ describe("stacking", () => {
     g.act("p0", { type: "play", cardId: d2.id });
     g.act("p1", { type: "play", cardId: rev.id, color: "yellow" });
     expect(g.state.direction).toBe(-1);
-    expect(g.turnId).toBe("p0");
-    expect(g.state.drawStack).toBe(6);
-    g.act("p0", { type: "take_penalty" });
+    // p0 has nothing to stack, so the 6 comes straight back to them
     expect(g.hand("p0")).toHaveLength(8);
+    expect(g.state.drawStack).toBe(0);
     expect(g.turnId).toBe("p2");
   });
 
@@ -123,13 +124,93 @@ describe("stacking", () => {
       arrange(game({ stacking: "mixed" }), {
         turn: "p0",
         top: num("red", 5),
-        hands: { p0: [w4, num("red", 1)], p1: [w4b, num("green", 1)], p2: [num("yellow", 3)] },
+        hands: { p0: [w4, num("red", 1)], p1: [w4b, num("green", 1)], p2: [card("wild4"), num("yellow", 3)] },
       }),
     );
     g.act("p0", { type: "play", cardId: w4.id, color: "blue" });
     expect(privateView(g.state, "p1").canChallenge).toBe(true);
     g.act("p1", { type: "play", cardId: w4b.id, color: "blue" });
+    expect(g.turnId).toBe("p2");
+    expect(privateView(g.state, "p2").canTakePenalty).toBe(true);
     expect(privateView(g.state, "p2").canChallenge).toBe(false);
+  });
+});
+
+describe("auto-take", () => {
+  it("a +2 the next player can't stack is drawn straight away", () => {
+    const a = card("draw2", "red");
+    const g = new Game(
+      arrange(game({ stacking: "higher" }), {
+        turn: "p0",
+        top: num("red", 5),
+        hands: { p0: [a, num("red", 1)], p1: [num("green", 1)], p2: [num("yellow", 3)] },
+      }),
+    );
+    g.act("p0", { type: "play", cardId: a.id });
+    expect(g.hand("p1")).toHaveLength(3);
+    expect(g.turnId).toBe("p2");
+    expect(g.state.turn.kind).toBe("play");
+    expect(g.state.drawStack).toBe(0);
+    expect(g.events).toContainEqual(expect.objectContaining({ t: "draw", pid: "p1", count: 2, reason: "penalty" }));
+  });
+
+  it("under 'higher' a +2 can't answer a +4, so the +4 is drawn straight away", () => {
+    const a = card("draw4", "red");
+    const g = new Game(
+      arrange(game({ stacking: "higher", cards: { draw4Color: true } }), {
+        turn: "p0",
+        top: num("red", 5),
+        hands: { p0: [a, num("red", 1)], p1: [card("draw2", "red"), num("green", 1)], p2: [num("yellow", 3)] },
+      }),
+    );
+    g.act("p0", { type: "play", cardId: a.id });
+    expect(g.hand("p1")).toHaveLength(6);
+    expect(g.turnId).toBe("p2");
+  });
+
+  it("a player who can stack still gets to choose", () => {
+    const a = card("draw2", "red");
+    const b = card("draw2", "green");
+    const g = new Game(
+      arrange(game({ stacking: "higher" }), { turn: "p0", top: num("red", 5), hands: { p0: [a, num("red", 1)], p1: [b, num("green", 1)] } }),
+    );
+    g.act("p0", { type: "play", cardId: a.id });
+    expect(g.turnId).toBe("p1");
+    expect(g.state.turn.kind).toBe("stack");
+    expect(g.hand("p1")).toHaveLength(2);
+  });
+
+  it("a fresh Wild +4 can still be challenged, so it waits", () => {
+    const w4 = card("wild4");
+    const g = new Game(arrange(game({ stacking: "higher" }), { turn: "p0", top: num("red", 5), hands: { p0: [w4, num("red", 1)], p1: [num("green", 1)] } }));
+    g.act("p0", { type: "play", cardId: w4.id, color: "blue" });
+    expect(g.turnId).toBe("p1");
+    expect(privateView(g.state, "p1").canChallenge).toBe(true);
+  });
+
+  it("a Wild +4 that can't be challenged or stacked is drawn straight away", () => {
+    const w4 = card("wild4");
+    const g = new Game(arrange(game({ wild4Mode: "free" }), { turn: "p0", top: num("red", 5), hands: { p0: [w4, num("red", 1)], p1: [num("green", 1)] } }));
+    g.act("p0", { type: "play", cardId: w4.id, color: "blue" });
+    expect(g.hand("p1")).toHaveLength(5);
+    expect(g.turnId).toBe("p2");
+  });
+
+  it("knocks the victim out under the mercy rule and play goes on", () => {
+    const a = card("draw2", "red");
+    const big = Array.from({ length: 14 }, (_, i) => num("green", (i % 9) + 1));
+    const g = new Game(
+      arrange(game({ stacking: "higher", mercyRule: true, mercyLimit: 15 }), {
+        turn: "p0",
+        top: num("red", 5),
+        hands: { p0: [a, num("red", 1)], p1: big, p2: [num("yellow", 3)] },
+      }),
+    );
+    const total = countCards(g.state);
+    g.act("p0", { type: "play", cardId: a.id });
+    expect(g.player("p1").status).toBe("out");
+    expect(g.turnId).toBe("p2");
+    expect(countCards(g.state)).toBe(total);
   });
 });
 

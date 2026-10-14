@@ -24,4 +24,5 @@ export const EFFECTS: Record<CardKind, Effect> = {
 };
 
 export { discardMatching } from "./discardAll";
+export { takePenalty } from "./draw";
 export type { PlayOptions } from "./types";

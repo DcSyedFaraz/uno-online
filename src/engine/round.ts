@@ -3,7 +3,7 @@ import { RuleError } from "./errors";
 import { shuffle } from "./rng";
 import { handPoints } from "./scoring";
 import { activePlayers, drawCards, nextActiveIndex, playerIndex, setTurn } from "./state";
-import type { Card, CardKind, Ctx, PlayerState } from "./types";
+import type { Card, CardKind, Ctx, GameState, PlayerState } from "./types";
 
 /** Cards that can't be the starting card: they go back into the deck and a new one is flipped. */
 const BAD_START: ReadonlySet<CardKind> = new Set([
@@ -43,6 +43,8 @@ export function startRound(ctx: Ctx) {
   state.lastRound = null;
   state.round += 1;
   state.phase = "playing";
+  // before any setTurn, so the first deadline already knows about the clock
+  state.roundEndsAt = state.settings.roundTimerMin > 0 ? ctx.now + state.settings.roundTimerMin * 60_000 : null;
   state.dealerIndex = state.dealerIndex < 0 ? Math.floor(ctx.rng() * n) : (state.dealerIndex + 1) % n;
 
   // Deal
@@ -92,7 +94,7 @@ export function startRound(ctx: Ctx) {
 }
 
 /** Ends the round with `winner` (or nobody) and scores it. */
-export function endRound(ctx: Ctx, winner: PlayerState | null) {
+export function endRound(ctx: Ctx, winner: PlayerState | null, timeUp = false) {
   const { state } = ctx;
   const hands: Record<string, Card[]> = {};
   let points = 0;
@@ -100,12 +102,13 @@ export function endRound(ctx: Ctx, winner: PlayerState | null) {
     hands[p.id] = [...p.hand];
     if (p !== winner) points += handPoints(p.hand);
   }
-  state.lastRound = { round: state.round, winnerId: winner?.id ?? null, points, hands };
+  state.lastRound = { round: state.round, winnerId: winner?.id ?? null, points, hands, ...(timeUp ? { timeUp } : {}) };
   state.unoWindow = null;
   state.deadline = null;
+  state.roundEndsAt = null;
   state.drawStack = 0;
   state.turnStartedAt = ctx.now;
-  ctx.events.push({ t: "round_over", winnerId: winner?.id ?? null, points });
+  ctx.events.push({ t: "round_over", winnerId: winner?.id ?? null, points, ...(timeUp ? { timeUp } : {}) });
 
   if (state.settings.winMode === "points" && winner) {
     winner.score += points;
@@ -117,6 +120,33 @@ export function endRound(ctx: Ctx, winner: PlayerState | null) {
   state.phase = "game_over";
   state.gameWinnerId = winner?.id ?? null;
   ctx.events.push({ t: "game_over", winnerId: state.gameWinnerId });
+}
+
+/** Whether the round clock has run out (same 50 ms slack as turn deadlines). */
+export function timeUp(state: GameState, now: number): boolean {
+  return state.phase === "playing" && state.roundEndsAt != null && now >= state.roundEndsAt - 50;
+}
+
+/**
+ * The round clock ran out: the active player holding the fewest card points wins.
+ * Ties go to fewer cards, then to whoever plays soonest (starting with the current player).
+ */
+export function endRoundOnTime(ctx: Ctx) {
+  const { state } = ctx;
+  const n = state.players.length;
+  let winner: PlayerState | null = null;
+  for (let i = 0; i < n; i++) {
+    const p = state.players[(((state.turnIndex + i * state.direction) % n) + n) % n];
+    if (p.status !== "active") continue;
+    if (!winner) {
+      winner = p;
+      continue;
+    }
+    const diff = handPoints(p.hand) - handPoints(winner.hand);
+    if (diff < 0 || (diff === 0 && p.hand.length < winner.hand.length)) winner = p;
+  }
+  ctx.events.push({ t: "time_up" });
+  endRound(ctx, winner, true);
 }
 
 /** Removes a player from the round; their cards go to the bottom of the draw pile. */

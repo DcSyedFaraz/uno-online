@@ -1,5 +1,6 @@
 import type { Card, Color, GameEvent, PublicView } from "@/engine";
 import { drawValue } from "@/engine/cards";
+import { handPoints } from "@/engine/scoring";
 import { playerName } from "@/client/store/game-store";
 import { COLOR_HEX } from "../sceneStore";
 
@@ -15,6 +16,7 @@ export interface CalloutSpec {
 }
 
 const COLOR_NAME: Record<Color, string> = { red: "RED", yellow: "YELLOW", green: "GREEN", blue: "BLUE" };
+const GOLD = "#ffcf1a";
 
 /**
  * Turns the events of one move into a single headline, so action and wild cards say
@@ -64,6 +66,12 @@ export function describeMove(ev: GameEvent[], next: PublicView, you: string | nu
       case "draw":
         if (e.reason === "penalty") penalty = { pid: e.pid, count: e.count };
         break;
+      case "time_up": {
+        const lr = next.lastRound;
+        const winner = lr?.winnerId;
+        if (!lr || !winner) return { icon: "⏱", title: "TIME'S UP!", sub: "The round is over", color: GOLD };
+        return { icon: "⏱", title: "TIME'S UP!", sub: `${says(winner, "win", "wins")} with the fewest points (${handPoints(lr.hands[winner] ?? [])})`, color: GOLD };
+      }
       case "challenge":
         return e.guilty
           ? { icon: "⚖", title: "BUSTED!", sub: `${says(e.offender, "were bluffing", "was bluffing")} and draws 4`, color: COLOR_HEX.red }

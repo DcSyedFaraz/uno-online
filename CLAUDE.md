@@ -24,7 +24,8 @@ NEONO is a 3D, neon-styled online card game modeled on classic UNO, for 2–10 p
 | Players | 2–10 per room (`MAX_PLAYERS` in `src/engine/state.ts`). Bots can fill seats. |
 | Identity | **Guest names only, no accounts.** A signed httpOnly cookie (`neono_session`, JWT via `jose`) holds a random `playerId`. Name and avatar are stored in localStorage and sent when you join. |
 | Joining | 6-character room code or share link `/r/CODE`, plus copy link, Web Share and a QR code in the lobby. Joining is allowed in the lobby or between rounds, not mid-round. |
-| Rules | **Pure classic by default.** The host opens **More rules**, where every extra is its **own switch**. The user explicitly rejected a single "No Mercy" bundle, so there are no presets, only "Reset to classic". |
+| Rules | **New rooms start from `DEFAULT_SETTINGS`**: classic plus **Equal-or-higher stacking**, the **Discard All** card and a **3-minute round clock** (user request). `CLASSIC_SETTINGS` stays all-off and is what tests build on. The host opens **More rules**, where every extra is its **own switch**. The user explicitly rejected a single "No Mercy" bundle, so there are no presets, only "Reset to classic". |
+| Round clock | Basic setting **Time limit**: Off / 3 / 5 / 7 min (default 3), per round. At time-up the active player with the **fewest card points** wins (ties: fewer cards, then turn order from the current player) and scores as usual. **The last minute plays at 2×**: turn timer halved, bots twice as fast. |
 | Visuals | Full 3D (React Three Fiber) in a **bright "red stage" look modeled on the official UNO! Android app**: red-orange felt with a center burst, gold rim, white-bordered bright cards, blue HUD panels. **No post-processing (no bloom).** The table is **one fixed oval on every screen**; only the camera adapts. |
 | Orientation | **Rooms (lobby and game) are landscape-only on phones and tablets.** Portrait shows a rotate prompt (`RotateGate`) with a "Play fullscreen" button that also locks landscape (Android Chrome; iPhones can't). The home page and join form work in portrait. A web manifest (`display: fullscreen`, `orientation: landscape`) makes home-screen installs open sideways. |
 | Card art | **Original NEONO art, brightened**, not UNO's trade dress: white border, bright body, light tilted lens, ink-outlined glyphs; wilds are purple and **take the picked color once played**; backs are royal blue with a red lens and the NEONO wordmark. |
@@ -57,6 +58,7 @@ User feedback that shaped the build, in order:
 20. Card-play sound was bad. Replaced the synth thump with a card slap (`cardSlap`).
 21. Looked messy. Replaced 12 loose chevrons with a clean ring and three arrows; tidied the discard pile.
 22. Rings should go behind the pile. Floor effects now sit just above the felt and draw first.
+23. Wanted stacking (equal or higher) and Discard All on by default, +2/+4 drawn automatically when you can't stack or challenge, and a 3/5/7-minute round clock where the fewest card points wins and the last minute runs at 2×. Done (`DEFAULT_SETTINGS`, `takePenalty`, `roundEndsAt`).
 
 ---
 
@@ -116,7 +118,7 @@ Browser (Next.js client)                     Vercel route handlers (Node)       
 
 - **Every message carries full views** (`{v, pub, priv, ev, now}`). Clients keep the highest `v` and ignore duplicates and out-of-order messages. A missed message is harmless, because the next full view corrects everything.
 - **Hidden information.** The deck order and other players' hands never leave the server. `eventsFor()` strips drawn-card details from other players' events. Ably tokens can only subscribe to the player's own game channel (`room:X:p:<pid>`) plus publish/subscribe/presence on `room:X:chat`. Clients **cannot publish game moves**.
-- **No server process for timers or bots.** State has a `deadline`: the AFK turn timer for humans, about 0.9–1.8s of pacing for bots and autopilot. When it passes, a client calls `POST /api/rooms/[code]/tick`. The **tick leader** (the connected human in the lowest seat, from presence) fires about 120ms after the deadline; everyone else is a backup at +1.8–2.7s. The server re-checks the deadline, applies a `timeout` action (bots decide in the engine), and ignores duplicates via optimistic locking.
+- **No server process for timers or bots.** State has a `deadline`: the AFK turn timer for humans, about 0.9–1.8s of pacing for bots and autopilot. It also has `roundEndsAt` for the round clock. `dueAt(state)` is the earlier of the two; when it passes, a client calls `POST /api/rooms/[code]/tick`. The **tick leader** (the connected human in the lowest seat, from presence) fires about 120ms after the deadline; everyone else is a backup at +1.8–2.7s. The server re-checks the deadline, applies a `timeout` action (bots decide in the engine), and ignores duplicates via optimistic locking.
 - **Dev fallbacks.** With no `DATABASE_URL`, an in-memory store on `globalThis` is used. With no `ABLY_API_KEY`, an in-process bus streams over SSE (`/api/dev/stream`, chat via `/api/dev/chat`, presence tracked per connection). Production **requires** both (`transport()` and `getStore()` throw otherwise).
 
 ---
@@ -133,12 +135,12 @@ The entry point is `applyAction(prev, action, actorId, now, rng) → { state, ev
   - `drawPile` and `discardPile` (top = **last** element)
   - `currentColor`, `direction` (±1), `turnIndex`, `dealerIndex`
   - `turn`, `drawStack`, `stackTopValue`
-  - `unoWindow`, `deadline`, `turnStartedAt`
+  - `unoWindow`, `deadline` (turn), `turnStartedAt`, `roundEndsAt` (round clock, null when off)
   - `totalCards`, `nextCardId`, `lastRound` and `gameWinnerId`
 - `TurnState` is one of:
   - `play`
   - `drawn{cardId}` (you may play the drawn card or pass)
-  - `stack{challenge|null}` (a draw penalty is pending: stack it, take it, or challenge a fresh Wild +4)
+  - `stack{challenge|null}` (a draw penalty is pending: stack it, take it, or challenge a fresh Wild +4). **Only exists when the player can answer**: if they hold nothing stackable and there's no challenge, `drawEffect` calls `takePenalty` straight away.
   - `choose_color{purpose: start|roulette}`
 - `PlayerState`: `status` is `active | out | left`, plus `saidUno`, `afkStrikes`, `autopilot` and `isBot`. Players who leave mid-round stay in the array as `left` until the next round, so seat indices stay stable.
 - **Actions:**
@@ -178,7 +180,7 @@ The entry point is `applyAction(prev, action, actorId, now, rng) → { state, ev
 
 ### Optional switches and where they live
 
-- `stacking`: `off | same | mixed | higher`. Handled in `effects/draw.ts` and `legal.canStack`. Stacking ignores color. Wild Reverse +4 flips direction and can send a stack back.
+- `stacking`: `off | same | mixed | higher` (default `higher`; the lobby toggle turns it on as `higher`). Handled in `effects/draw.ts` and `legal.canStack`. Stacking ignores color. Wild Reverse +4 flips direction and can send a stack back. A victim who can't stack or challenge auto-takes the stack.
 - `sevenSwap` / `zeroRotate`: `effects/numbers.ts`. A player who *receives* a 1-card hand is auto-marked as shouted. Mercy is checked after a swap.
 - `jumpIn`: identical color and symbol, out of turn, only while there's no pending penalty. The turn continues from the jumper.
 - `drawUntilPlayable` / `forcePlayDrawn`: `reducer.draw` and the `pass` guard.
@@ -186,6 +188,7 @@ The entry point is `applyAction(prev, action, actorId, now, rng) → { state, ev
 - `cards.*`: wildReverse4, discardAll (also discards the player's other same-color cards; the played card stays on top), skipAll (same player goes again), draw4Color, wild6, wild10, roulette (the victim names a color and flips until it appears).
 - `mercyRule` + `mercyLimit`: a player reaching the limit is `out`, and their cards go under the draw pile.
 - `unoPenalty`; `afkAutopilot` + `afkThreshold` (a bot plays for an idle human until they act again).
+- `roundTimerMin` (basic): `startRound` sets `roundEndsAt`. `round.timeUp` / `endRoundOnTime` run at the start of every action in `dispatch`: once time is up the round ends (`time_up` event, `lastRound.timeUp`) and in-round moves are dropped, not rejected. `scheduleDeadline` halves deadlines inside `FINAL_STRETCH_MS` (60s). `mergeSettings` fills keys missing from old saved rooms from `CLASSIC_SETTINGS`.
 
 ### The shout window (designed for online play)
 
@@ -298,7 +301,7 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
 - `RotateGate.tsx`: "Turn your phone sideways" overlay, plus "Play fullscreen" where `canLockLandscape()`.
 - `Lobby.tsx`: share card (QR code), seat grid (add or remove bots, kick; the remove button is always visible on touch), Start button (moved to the top on `short:` screens, where the lobby becomes two columns that scroll inside the screen), and `RulesPanel` (Basics plus a collapsible **More rules** with one switch per rule; read-only for non-hosts; tooltips come from `ruleInfo.ts`).
 - `GameHud.tsx` (layout follows the UNO! app):
-  - Top: `TopBar` (room code, rules chip, ⛶ `FullscreenButton` on touch, rules/mute/settings), the settings and rules sheets, `ColorPicker` (radial), `SwapHint`, `TurnStatus` (gold screen frame on your turn).
+  - Top: `TopBar` (room code, `RoundClock` pill (gold with "2×" in the last minute, red pulse under 10s, fires the "FINAL MINUTE!" callout when it crosses 60s), rules chip, ⛶ `FullscreenButton` on touch, rules/mute/settings), the settings and rules sheets, `ColorPicker` (radial), `SwapHint`, `TurnStatus` (gold screen frame on your turn).
   - **`ActionCallout`**: the white headline card in the empty middle of the top bar.
   - Bottom (`BottomHud`): **your badge in the bottom-left corner**, a **big round red UNO! button in the bottom-right corner** (sort pill above it), and one centered row at `bottom: var(--hand-top)` with `TurnPill` (turn text + current-color dot + "+N"), the 🔨 Catch button and the actions.
   - Overlays: `ShoutBanner`, `Toasts` (white pills), `useKeyboard` (←/→, Enter, D, U, Esc).
@@ -326,7 +329,7 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
 
 ## 11. Testing and verification
 
-- **Unit tests** (`src/engine/__tests__`): `classic.test.ts` covers deck, start cases, matching, skip and reverse, the challenge, shout timing, timeouts, scoring, lobby and views. `extras.test.ts` covers every switch.
+- **Unit tests** (`src/engine/__tests__`): `classic.test.ts` covers deck, start cases, matching, skip and reverse, the challenge, shout timing, timeouts, scoring, lobby and views. `extras.test.ts` covers every switch and the auto-take. `clock.test.ts` covers the round clock (time-up winner, ties, dropped moves, the 2× final stretch).
   - Test helpers: `startedGame` and `arrange` (sets known hands and top card and keeps the card count right). `Game` wraps actions with a moving clock.
 - **Fuzz** (`fuzz.test.ts`): bot-only games at 2–10 players under classic, single extra, or random switch mixes, with jump-ins injected, checking the invariants in §5.
 - **Server** (`src/server/__tests__`): optimistic-lock serialisation, stale update rejection, 400 mapping, no leaked hands, scoped Ably capability (Ably sorts the operation arrays alphabetically).

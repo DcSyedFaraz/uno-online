@@ -109,6 +109,14 @@ export function RulesPanel({ settings, editable }: { settings: RuleSettings; edi
             options={[0, 15, 30, 45, 60].map((n) => ({ value: n as RuleSettings["turnTimerSec"], label: n ? `${n}s` : "Off" }))}
           />
         </Row>
+        <Row label="Time limit" help={RULE_HELP.roundTimerMin}>
+          <Segmented
+            value={settings.roundTimerMin}
+            disabled={ro}
+            onChange={(roundTimerMin) => update({ roundTimerMin })}
+            options={[0, 3, 5, 7].map((n) => ({ value: n as RuleSettings["roundTimerMin"], label: n ? `${n} min` : "Off" }))}
+          />
+        </Row>
         <Row label="Win by" help={RULE_HELP.winMode}>
           <Segmented
             value={settings.winMode}
@@ -171,7 +179,7 @@ export function RulesPanel({ settings, editable }: { settings: RuleSettings; edi
           >
             <Group title="Stacking">
               <Row label="Stack draw cards" help={RULE_HELP.stacking}>
-                <Toggle label="Stacking" on={settings.stacking !== "off"} disabled={ro} onChange={(v) => update({ stacking: v ? "mixed" : "off" })} />
+                <Toggle label="Stacking" on={settings.stacking !== "off"} disabled={ro} onChange={(v) => update({ stacking: v ? "higher" : "off" })} />
               </Row>
               {settings.stacking !== "off" && (
                 <div className="pb-2">
@@ -283,9 +291,10 @@ export function RulesPanel({ settings, editable }: { settings: RuleSettings; edi
 }
 
 function stripBasics(s: RuleSettings): Patch {
-  const { handSize, turnTimerSec, winMode, targetPoints, deckCount, ...rest } = s;
+  const { handSize, turnTimerSec, roundTimerMin, winMode, targetPoints, deckCount, ...rest } = s;
   void handSize;
   void turnTimerSec;
+  void roundTimerMin;
   void winMode;
   void targetPoints;
   void deckCount;

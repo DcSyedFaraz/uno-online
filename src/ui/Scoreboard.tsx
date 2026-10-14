@@ -44,7 +44,16 @@ export function Scoreboard() {
   const isHost = pub.hostId === you;
   const gameOver = pub.phase === "game_over";
   const points = pub.settings.winMode === "points";
-  const ranked = [...pub.players].filter((p) => p.status !== "left").sort((a, b) => (points ? b.score - a.score : (lr.hands[a.id]?.length ?? 0) - (lr.hands[b.id]?.length ?? 0)));
+  const left = (id: string) => lr.hands[id] ?? [];
+  // single round: winner first, then fewest cards left (fewest points when the clock decided it)
+  const ranked = [...pub.players]
+    .filter((p) => p.status !== "left")
+    .sort((a, b) => {
+      if (points) return b.score - a.score;
+      if (a.id === lr.winnerId || b.id === lr.winnerId) return a.id === lr.winnerId ? -1 : 1;
+      const byCount = left(a.id).length - left(b.id).length;
+      return lr.timeUp ? handPoints(left(a.id)) - handPoints(left(b.id)) || byCount : byCount;
+    });
 
   return (
     <AnimatePresence>
@@ -60,6 +69,7 @@ export function Scoreboard() {
             <div className="font-display toon-text mt-2 text-2xl font-black text-[#ffd84a] short:mt-1 short:text-xl">
               {winner ? (winner.id === you ? (gameOver ? "You win the game!" : "You win the round!") : `${winner.name} wins${gameOver ? " the game" : ""}!`) : "Round over"}
             </div>
+            {lr.timeUp && <div className="mt-1 text-sm font-semibold text-gold">⏱ Time&apos;s up: the fewest card points wins</div>}
             {points && winner && (
               <div className="mt-1 text-sm font-semibold text-white/85">
                 +<CountUp to={lr.points} /> points

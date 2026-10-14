@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildDeck, deckSpecs, resolveDeckCount } from "../deck";
 import { RuleError } from "../errors";
 import { applyAction } from "../reducer";
-import { CLASSIC_SETTINGS, mergeSettings } from "../rules";
+import { activeExtras, CLASSIC_SETTINGS, DEFAULT_SETTINGS, mergeSettings } from "../rules";
 import { mulberry32 } from "../rng";
 import { countCards, createGame, newPlayer } from "../state";
 import { UNO_CATCH_GRACE_MS, UNO_WINDOW_MS } from "../uno";
@@ -442,9 +442,22 @@ describe("views", () => {
     expect(JSON.stringify(privateView(res.state, "p1"))).not.toContain(drawn.id);
   });
 
-  it("defaults are pure classic", () => {
+  it("new rooms start with the default rules: classic plus higher stacking, Discard All and 3-minute rounds", () => {
     const s = createGame({ id: "h", name: "H", avatar: "🙂" });
     s.players.push(newPlayer({ id: "g", name: "G", avatar: "🙂" }));
-    expect(s.settings).toEqual(CLASSIC_SETTINGS);
+    expect(s.settings).toEqual(DEFAULT_SETTINGS);
+    expect(s.settings.stacking).toBe("higher");
+    expect(s.settings.cards.discardAll).toBe(true);
+    expect(s.settings.roundTimerMin).toBe(3);
+    expect(activeExtras(CLASSIC_SETTINGS)).toEqual([]);
+    expect(CLASSIC_SETTINGS.roundTimerMin).toBe(0);
+  });
+
+  it("settings saved before a rule existed fall back to classic for it", () => {
+    const legacy = structuredClone(CLASSIC_SETTINGS) as Partial<typeof CLASSIC_SETTINGS>;
+    delete legacy.roundTimerMin;
+    const merged = mergeSettings(legacy as typeof CLASSIC_SETTINGS, { jumpIn: true });
+    expect(merged.roundTimerMin).toBe(0);
+    expect(merged.jumpIn).toBe(true);
   });
 });

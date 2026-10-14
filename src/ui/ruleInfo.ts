@@ -4,10 +4,12 @@ import type { ExtraCardKey, RuleSettings } from "@/engine";
 export const RULE_HELP = {
   handSize: "How many cards everyone is dealt at the start of a round.",
   turnTimerSec: "If a player doesn't move in time they automatically draw a card (or take the penalty).",
+  roundTimerMin:
+    "The longest a round can last. When time runs out, whoever holds the fewest card points wins (numbers count face value, action cards 20, wilds 50). In the last minute the turn timer halves and bots play twice as fast.",
   winMode: "Single round: first to empty their hand wins. Points: the winner scores everyone else's leftover cards; first to the target wins.",
   deckCount: "Auto adds a second deck for big tables (7+ players) and a third for huge hands.",
   stacking:
-    "When someone plays a draw card on you, you may answer with another draw card instead of drawing. The total keeps growing until someone can't stack and takes it all.",
+    "When someone plays a draw card on you, you may answer with another draw card instead of drawing. The total keeps growing until someone can't stack and has to take it all (drawn automatically).",
   sevenSwap: "Playing a 7 lets you swap your whole hand with a player you choose.",
   zeroRotate: "Playing a 0 makes everyone pass their hand to the next player in the direction of play.",
   jumpIn: "If you hold the exact same card as the one just played (same color and symbol), you can throw it in out of turn. Play continues from you.",

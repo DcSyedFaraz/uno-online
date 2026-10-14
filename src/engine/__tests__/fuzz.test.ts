@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { canStack } from "../legal";
 import { applyAction, engineDebug } from "../reducer";
 import { CLASSIC_SETTINGS, mergeSettings, type RuleSettings } from "../rules";
 import { mulberry32, pick } from "../rng";
-import { countCards, createGame, newPlayer } from "../state";
+import { countCards, createGame, dueAt, newPlayer } from "../state";
 import { privateView } from "../view";
 import type { GameState } from "../types";
 
@@ -32,6 +33,7 @@ function randomSettings(r: () => number, mode: number): RuleSettings {
     s.winMode = "points";
     s.targetPoints = 150;
   }
+  if (r() < 0.3) s.roundTimerMin = pick([3, 5, 7] as const, r);
   if (mode === 1) pick(SWITCHES, r)(s, r);
   if (mode === 2) for (const sw of SWITCHES) if (r() < 0.5) sw(s, r);
   return mergeSettings(CLASSIC_SETTINGS, s);
@@ -47,6 +49,12 @@ function checkInvariants(s: GameState) {
     expect(s.drawStack).toBeGreaterThanOrEqual(0);
     expect(s.discardPile.length).toBeGreaterThan(0);
     expect(s.deadline).not.toBeNull();
+    expect(dueAt(s)).not.toBeNull();
+    // nobody is ever left facing a stack they can't answer: that one is drawn automatically
+    if (s.turn.kind === "stack") {
+      const p = s.players[s.turnIndex];
+      expect(!!s.turn.challenge || p.hand.some((c) => canStack(s.settings, c, s.stackTopValue))).toBe(true);
+    }
   }
   for (const p of s.players) if (p.status !== "active") expect(p.hand).toHaveLength(0);
 }
@@ -87,7 +95,7 @@ function simulate(seed: number) {
       checkInvariants(state);
       continue;
     }
-    now = Math.max(now + 1, state.deadline ?? now);
+    now = Math.max(now + 1, dueAt(state) ?? now);
     state = applyAction(state, { type: "timeout" }, "system", now, r).state;
     checkInvariants(state);
   }
