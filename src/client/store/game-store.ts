@@ -136,7 +136,8 @@ export const useGame = create<GameStore>((set, get) => ({
       priv: msg.priv,
       member: !!msg.priv,
       removed: !!msg.removed && s.member,
-      pendingPlayId: s.pendingPlayId && hand.has(s.pendingPlayId) ? s.pendingPlayId : null,
+      // a play still in flight when the round ends (e.g. the clock ran out) is dropped by the server
+      pendingPlayId: s.pendingPlayId && hand.has(s.pendingPlayId) && msg.pub.phase === "playing" ? s.pendingPlayId : null,
       selectedCardId: s.selectedCardId && hand.has(s.selectedCardId) ? s.selectedCardId : null,
       picker: s.picker && hand.has(s.picker.cardId) ? s.picker : null,
     });

@@ -44,6 +44,8 @@ export interface PublicView {
   unoWindow: UnoWindow | null;
   deadline: number | null;
   turnStartedAt: number;
+  /** epoch ms when the round clock runs out; null = no time limit */
+  roundEndsAt: number | null;
   lastRound: RoundResult | null;
   gameWinnerId: string | null;
 }
@@ -109,6 +111,7 @@ export function publicView(state: GameState): PublicView {
     unoWindow: state.unoWindow,
     deadline: state.deadline,
     turnStartedAt: state.turnStartedAt,
+    roundEndsAt: state.roundEndsAt ?? null,
     lastRound: state.phase === "playing" ? null : state.lastRound,
     gameWinnerId: state.gameWinnerId,
   };

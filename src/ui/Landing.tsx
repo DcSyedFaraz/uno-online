@@ -65,7 +65,7 @@ export function Landing() {
           <h1 className="font-display toon-text text-6xl font-black tracking-tight text-[#ffd84a] sm:text-7xl">{BRAND.name}</h1>
           <p className="mt-4 text-lg font-semibold text-white [text-shadow:0_2px_0_rgba(60,0,10,0.45)]">{BRAND.tagline}</p>
           <ul className="mt-6 hidden space-y-2 text-sm font-medium text-white/90 [text-shadow:0_1px_0_rgba(60,0,10,0.45)] lg:block">
-            <li>⚡ Classic rules out of the box — switch on stacking, 7-0, jump-in and more if you like</li>
+            <li>⚡ Stacking, Discard All and 3-minute rounds out of the box — change any rule in the lobby, or go back to pure classic</li>
             <li>🔗 Share a link, friends join as guests — no sign-up</li>
             <li>🤖 Fill empty seats with bots</li>
           </ul>

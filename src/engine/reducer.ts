@@ -1,10 +1,10 @@
 import { ZodError } from "zod";
 import { drawValue, isWild } from "./cards";
 import { BOT_AVATARS, BOT_NAMES, botColor, completePlay, decideBot } from "./bots";
-import { discardMatching, EFFECTS } from "./effects";
+import { discardMatching, EFFECTS, takePenalty } from "./effects";
 import { assertRule, RuleError } from "./errors";
 import { jumpInBlocker, matchesForPlayer, needsColor, needsSwapTarget, playBlocker } from "./legal";
-import { checkMercy, eliminate, endRound, settle, startRound } from "./round";
+import { checkMercy, eliminate, endRound, endRoundOnTime, settle, startRound, timeUp } from "./round";
 import { mergeSettings } from "./rules";
 import { pick } from "./rng";
 import {
@@ -22,6 +22,20 @@ import {
 } from "./state";
 import { callUno, catchUno, expireUnoWindow } from "./uno";
 import { COLORS, type Action, type Card, type Color, type Ctx, type GameEvent, type GameState, type PlayerState } from "./types";
+
+/** Moves inside a round; once the round clock has run out these are dropped instead of applied. */
+const IN_ROUND_ACTIONS: ReadonlySet<Action["type"]> = new Set([
+  "play",
+  "jump_in",
+  "draw",
+  "pass",
+  "take_penalty",
+  "challenge",
+  "choose_color",
+  "call_uno",
+  "catch_uno",
+  "timeout",
+]);
 
 export interface ApplyResult {
   state: GameState;
@@ -42,6 +56,10 @@ export function applyAction(prev: GameState, action: Action, actorId: string, no
 function dispatch(ctx: Ctx, action: Action, actorId: string) {
   const { state } = ctx;
   expireUnoWindow(state, ctx.now);
+  if (timeUp(state, ctx.now)) {
+    endRoundOnTime(ctx);
+    if (IN_ROUND_ACTIONS.has(action.type)) return;
+  }
   switch (action.type) {
     case "join":
       return join(ctx, actorId, action.name, action.avatar);
@@ -144,17 +162,9 @@ function gameAction(ctx: Ctx, actor: PlayerState, action: Action) {
       assertRule(turn.kind === "drawn", "You can only pass after drawing a playable card");
       assertRule(!state.settings.forcePlayDrawn, "You must play the card you drew");
       return advanceTurn(ctx, 1);
-    case "take_penalty": {
+    case "take_penalty":
       assertRule(turn.kind === "stack", "There's no penalty to take");
-      const amount = state.drawStack;
-      state.drawStack = 0;
-      state.stackTopValue = 0;
-      drawCards(ctx, actor, amount, "penalty");
-      checkMercy(ctx, actor);
-      advanceTurn(ctx, 1);
-      settle(ctx);
-      return;
-    }
+      return takePenalty(ctx, actor);
     case "challenge": {
       assertRule(turn.kind === "stack" && turn.challenge, "There's nothing to challenge");
       const offender = findPlayer(state, turn.challenge.offenderId);
@@ -448,6 +458,7 @@ function backToLobby(ctx: Ctx) {
   state.drawStack = 0;
   state.unoWindow = null;
   state.deadline = null;
+  state.roundEndsAt = null;
   state.round = 0;
   state.lastRound = null;
   state.gameWinnerId = null;

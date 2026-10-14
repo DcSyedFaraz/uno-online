@@ -2,7 +2,7 @@
 
 A 3D neon online card game in the style of UNO, for 2–10 players. You create a room, share the link, and friends join as guests with any name. No sign-up needed.
 
-- **Classic rules by default.** The host can open **More rules** and switch on individual extras: stacking (3 modes), 7 = swap hands, 0 = pass hands, jump-in, draw until playable, forced play, Wild +4 modes, Wild Reverse +4, Discard All, Skip Everyone, colored +4, +6, +10, Color Roulette, the mercy rule, the missed-shout penalty size, and AFK autopilot. Each one is a separate switch. There are no bundles.
+- **Sensible defaults:** classic rules plus equal-or-higher stacking, Discard All and a 3-minute round clock (the fewest card points wins at time-up; the last minute plays at 2×). A +2/+4 you can't stack or challenge is drawn for you. The round clock can be set to 3, 5 or 7 minutes or switched off. The host can open **More rules** and switch individual extras on or off: stacking (3 modes), 7 = swap hands, 0 = pass hands, jump-in, draw until playable, forced play, Wild +4 modes, Wild Reverse +4, Discard All, Skip Everyone, colored +4, +6, +10, Color Roulette, the mercy rule, the missed-shout penalty size, and AFK autopilot. Each one is a separate switch. There are no bundles.
 - **3D table.** Built with React Three Fiber. Every card glides between the deck, your hand, the seats and the pile. You also get:
   - a neon rim that takes on the current color
   - a direction ring, color shockwaves and particle bursts

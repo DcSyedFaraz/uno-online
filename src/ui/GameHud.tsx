@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { UNO_CATCH_GRACE_MS, UNO_WINDOW_MS } from "@/engine/uno";
 import { serverNow } from "@/client/clock";
-import { activeExtras, COLORS, type Color } from "@/engine";
+import { activeExtras, COLORS, FINAL_STRETCH_MS, type Color } from "@/engine";
 import { BRAND } from "@/brand";
 import { playCard, sendAction } from "@/client/actions";
 import { playerName, useGame } from "@/client/store/game-store";
@@ -46,6 +46,47 @@ export function FullscreenButton() {
   );
 }
 
+/** Round time left. Gold with "2×" in the final minute (turns run twice as fast), pulsing red in the last 10s. */
+function RoundClock() {
+  const endsAt = useGame((s) => (s.pub?.phase === "playing" ? s.pub.roundEndsAt : null));
+  const limitMs = useGame((s) => (s.pub?.settings.roundTimerMin ?? 0) * 60_000);
+  const [now, setNow] = useState(serverNow);
+  useEffect(() => {
+    if (endsAt == null) return;
+    // a reload inside the final minute shouldn't announce it again
+    let prevLeft = endsAt - serverNow();
+    const id = setInterval(() => {
+      const t = serverNow();
+      const left = endsAt - t;
+      if (prevLeft > FINAL_STRETCH_MS && left <= FINAL_STRETCH_MS && left > 0) {
+        useScene.getState().showCallout({ icon: "⏱", title: "FINAL MINUTE!", sub: "Turns are 2× faster now", color: "#ffcf1a" });
+        playSfx("turn");
+      }
+      prevLeft = left;
+      setNow(t);
+    }, 250);
+    return () => clearInterval(id);
+  }, [endsAt]);
+  if (endsAt == null) return null;
+  const left = Math.max(0, Math.min(endsAt - now, limitMs || Infinity));
+  const secs = Math.ceil(left / 1000);
+  const final = left <= FINAL_STRETCH_MS;
+  const urgent = left <= 10_000;
+  return (
+    <div
+      className={`glass flex items-center gap-1.5 !rounded-xl px-3 py-2 text-sm short:py-1.5 short:text-xs ${urgent ? "animate-pulse bg-neon-red bg-none" : final ? "bg-gold bg-none text-ink" : ""}`}
+      title="Round time left. When it runs out, the fewest card points wins. The last minute plays at 2× speed."
+      aria-label={`Round time left: ${Math.floor(secs / 60)} minutes ${secs % 60} seconds`}
+    >
+      <span aria-hidden>⏱</span>
+      <span className="font-display font-bold tabular-nums">
+        {Math.floor(secs / 60)}:{String(secs % 60).padStart(2, "0")}
+      </span>
+      {final && <span className="rounded-md bg-ink px-1 text-[10px] font-black leading-4 text-gold">2×</span>}
+    </div>
+  );
+}
+
 export function TopBar() {
   const code = useGame((s) => s.code);
   const pub = useGame((s) => s.pub);
@@ -68,6 +109,7 @@ export function TopBar() {
           <span className={`h-2.5 w-2.5 rounded-full ring-2 ring-white ${connected ? "bg-neon-green" : "bg-neon-yellow animate-pulse"}`} />
           <span className="font-display font-bold tracking-[0.15em]">{code}</span>
         </button>
+        <RoundClock />
         <button className="glass hidden max-w-[34vw] items-center gap-1.5 truncate !rounded-xl px-3 py-2 text-xs font-semibold md:flex short:hidden" onClick={() => setRulesOpen(true)}>
           {extras.length === 0 ? "Classic rules" : extras.slice(0, 3).join(" · ") + (extras.length > 3 ? ` +${extras.length - 3}` : "")}
         </button>
@@ -213,6 +255,7 @@ export function RulesSheet() {
         <div className="rounded-xl bg-white/15 p-3 text-white/90">
           Classic rules: match the top card by color or symbol, or play a wild. Shout <b>{BRAND.shout}</b> when you&apos;re down to one card — or get
           caught for +{s.unoPenalty}. {s.winMode === "points" ? `First to ${s.targetPoints} points wins.` : "First to empty their hand wins."}
+          {s.roundTimerMin > 0 && ` Rounds last up to ${s.roundTimerMin} minutes: when time runs out, the fewest card points wins, and the last minute plays at 2× speed.`}
           {s.wild4Mode === "challenge" ? " Wild +4 can be challenged." : s.wild4Mode === "free" ? " Wild +4 can be played anytime." : " Wild +4 only without a card of the current color."}
         </div>
         {items.length === 0 ? (
