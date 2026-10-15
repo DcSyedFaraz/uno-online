@@ -102,6 +102,10 @@ function dispatch(ctx: Ctx, action: Action, actorId: string) {
     }
     case "leave":
       return removePlayer(ctx, actor);
+    case "close_room":
+      requireHost(state, actor);
+      ctx.events.push({ t: "room_closed" });
+      return;
     case "transfer_host": {
       requireHost(state, actor);
       const target = findPlayer(state, action.playerId);
@@ -113,6 +117,7 @@ function dispatch(ctx: Ctx, action: Action, actorId: string) {
     case "start":
       requireHost(state, actor);
       assertRule(state.phase === "lobby" || state.phase === "game_over", "The game has already started");
+      state.players = state.players.filter((p) => !p.takenOver);
       for (const p of state.players) p.score = 0;
       state.round = 0;
       state.dealerIndex = -1;
@@ -387,6 +392,14 @@ function join(ctx: Ctx, id: string, name: string, avatar: string) {
   const { state } = ctx;
   const existing = findPlayer(state, id);
   if (existing) {
+    if (existing.takenOver) {
+      // back from a leave: take the seat (and hand) back from the bot
+      existing.takenOver = false;
+      existing.isBot = false;
+      existing.autopilot = false;
+      existing.afkStrikes = 0;
+      if (state.phase === "playing" && currentPlayer(state) === existing) scheduleDeadline(ctx);
+    }
     if (existing.status === "left") {
       assertRule(state.phase !== "playing", "You left this round — you can rejoin when it ends");
       existing.status = "active";
@@ -420,7 +433,14 @@ function addBot(ctx: Ctx, actor: PlayerState) {
 function removePlayer(ctx: Ctx, target: PlayerState) {
   const { state } = ctx;
   if (state.phase === "playing") {
-    if (target.status === "active") {
+    if (target.status === "active" && !target.isBot) {
+      // leaving mid-game: a bot takes over the seat and the hand
+      target.isBot = true;
+      target.takenOver = true;
+      target.autopilot = false;
+      ctx.events.push({ t: "player_left", pid: target.id });
+      if (currentPlayer(state) === target) scheduleDeadline(ctx);
+    } else if (target.status === "active") {
       eliminate(ctx, target, "left");
     } else {
       target.status = "left";
@@ -442,7 +462,7 @@ function removePlayer(ctx: Ctx, target: PlayerState) {
 
 function backToLobby(ctx: Ctx) {
   const { state } = ctx;
-  state.players = state.players.filter((p) => p.status !== "left");
+  state.players = state.players.filter((p) => p.status !== "left" && !p.takenOver);
   for (const p of state.players) {
     p.hand = [];
     p.score = 0;

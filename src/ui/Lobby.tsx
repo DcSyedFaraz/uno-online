@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import QRCode from "qrcode";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { MAX_PLAYERS } from "@/engine";
 import { BRAND } from "@/brand";
@@ -62,6 +63,13 @@ export function Lobby() {
   const code = useGame((s) => s.code)!;
   const presence = useGame((s) => s.presence);
   const isHost = pub.hostId === you;
+  const router = useRouter();
+  const leaveRoom = async () => {
+    if (await sendAction({ type: "leave" })) router.push("/");
+  };
+  const closeRoom = async () => {
+    if (window.confirm("Close this room for everyone? It will be deleted.") && (await sendAction({ type: "close_room" }))) router.push("/");
+  };
   const seats = pub.players.filter((p) => p.status !== "left");
   const full = seats.length >= MAX_PLAYERS;
   const [starting, setStarting] = useState(false);
@@ -150,6 +158,16 @@ export function Lobby() {
               Waiting for the host to start…
             </div>
           )}
+          <div className="flex w-full max-w-sm gap-2">
+            <button className="btn btn-ghost flex-1 py-2 text-xs" onClick={leaveRoom}>
+              Leave room
+            </button>
+            {isHost && (
+              <button className="btn btn-ghost flex-1 py-2 text-xs !text-neon-red" onClick={closeRoom}>
+                Close room
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

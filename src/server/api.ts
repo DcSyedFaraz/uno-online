@@ -30,6 +30,7 @@ export const clientActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("remove_bot"), playerId: id }),
   z.object({ type: z.literal("kick"), playerId: id }),
   z.object({ type: z.literal("leave") }),
+  z.object({ type: z.literal("close_room") }),
   z.object({ type: z.literal("transfer_host"), playerId: id }),
   z.object({ type: z.literal("start") }),
   z.object({ type: z.literal("next_round") }),

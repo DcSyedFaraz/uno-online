@@ -20,6 +20,7 @@ export interface RoomStore {
   /** optimistic locking: false if someone else changed the room first */
   update(code: string, state: GameState, expectedVersion: number, now: number): Promise<boolean>;
   deleteInactive(before: number): Promise<number>;
+  remove(code: string): Promise<void>;
 }
 
 /** Same table as drizzle/0000_*.sql; created on first use so deploys don't need a migration step. */
@@ -74,6 +75,10 @@ function neonStore(url: string): RoomStore {
         .returning({ id: rooms.id });
       return rows.length === 1;
     },
+    async remove(code) {
+      await schema();
+      await db.delete(rooms).where(eq(rooms.code, code));
+    },
     async deleteInactive(before) {
       await schema();
       const rows = await db.delete(rooms).where(lt(rooms.lastActivityAt, before)).returning({ id: rooms.id });
@@ -102,6 +107,9 @@ function memoryStore(): RoomStore {
       if (!r || r.version !== expectedVersion) return false;
       map.set(code, { code, state: structuredClone(state), version: expectedVersion + 1, lastActivityAt: now });
       return true;
+    },
+    async remove(code) {
+      map.delete(code);
     },
     async deleteInactive(before) {
       let n = 0;

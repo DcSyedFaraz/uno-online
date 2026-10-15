@@ -70,3 +70,29 @@ describe("Ably tokens", () => {
     expect([...cap["room:ABCDEF:chat"]].sort()).toEqual(["presence", "publish", "subscribe"]);
   });
 });
+
+describe("closing and emptying rooms", () => {
+  it("the host can close the room (it is deleted); a guest cannot", async () => {
+    const code = await roomWithTwoBots();
+    await expect(perform(code, "guest", { type: "close_room" })).rejects.toMatchObject({ status: 400 });
+    expect(await getStore().get(code)).not.toBeNull();
+    await perform(code, "host", { type: "close_room" });
+    expect(await getStore().get(code)).toBeNull();
+  });
+
+  it("the host leaving hands the room to the next human; the last human leaving deletes it", async () => {
+    const code = await roomWithTwoBots();
+    await perform(code, "host", { type: "leave" });
+    expect((await getStore().get(code))!.state.hostId).toBe("guest");
+    await perform(code, "guest", { type: "leave" });
+    expect(await getStore().get(code)).toBeNull();
+  });
+
+  it("leaving mid-game keeps the room and a bot takes the seat", async () => {
+    const code = await roomWithTwoBots();
+    await perform(code, "host", { type: "start" });
+    await perform(code, "guest", { type: "leave" });
+    const rec = (await getStore().get(code))!;
+    expect(rec.state.players.find((p) => p.id === "guest")).toMatchObject({ isBot: true, takenOver: true });
+  });
+});

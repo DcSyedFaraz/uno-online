@@ -45,6 +45,8 @@ export interface PlayerState {
   status: PlayerStatus;
   afkStrikes: number;
   autopilot: boolean;
+  /** a human who left mid-game: a bot plays their seat until the game ends (or they rejoin) */
+  takenOver?: boolean;
 }
 
 /** What the current turn is waiting for. */
@@ -127,6 +129,7 @@ export type Action =
   | { type: "remove_bot"; playerId: string }
   | { type: "kick"; playerId: string }
   | { type: "leave" }
+  | { type: "close_room" }
   | { type: "transfer_host"; playerId: string }
   | { type: "start" }
   | { type: "next_round" }
@@ -160,6 +163,7 @@ export type GameEvent =
   | { t: "player_joined"; pid: string }
   | { t: "player_left"; pid: string }
   | { t: "host_changed"; pid: string }
+  | { t: "room_closed" }
   | { t: "settings" };
 
 export interface Ctx {

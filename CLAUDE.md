@@ -91,7 +91,7 @@ User feedback that shaped the build, in order:
 | `npm run lint` / `npx tsc --noEmit -p .` | Lint and type-check. Both must be clean. |
 | `npx next build` | Production build check |
 | `npm run deploy` | **User runs this.** One-shot Neon + Vercel + env vars + production deploy (`scripts/deploy.mjs`). |
-| `npm run voices` | **User runs this** with `ELEVENLABS_API_KEY`. Generates `public/sfx/uno.mp3` and `caught.mp3`. |
+| `npm run voices` | Generates all 17 voice clips in `public/sfx/` (skips existing; `-- --force` regenerates). The key comes from the environment, `.env.local`, or the sibling projects' `.env` files; it is never printed or copied. |
 | `npm run db:generate` | Regenerate the Drizzle SQL from `src/server/db/schema.ts` (reference only; see §6) |
 
 ---
@@ -321,9 +321,11 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
 - **The engine lives on `globalThis.__neonoAudio`** (context, buses, music timer, clips, preferences). That stops hot reload from creating a second, unstoppable music loop: the music toggle bug was exactly this.
 - Turning music off fades out the current music bus and swaps in a fresh one, so notes already scheduled die with it.
 - `unlockAudio()` must run on a user gesture. **Capture-phase `pointerdown`/`touchend`/`keydown` listeners call it on any interaction** (and `visibilitychange` resumes the context), so players who reloaded still hear other people's shouts. It also primes speech synthesis with a silent utterance (iOS won't speak later otherwise).
-- `playVoice("uno" | "caught")` plays `/sfx/<name>.mp3` when present (none are committed yet), otherwise browser speech pitched up. `speak()` only cancels when busy and then waits 60ms (Chrome drops an utterance queued in the same tick as `cancel()`).
+- `playVoice(name, delayMs?)` plays `/sfx/<name>.mp3` (clips are committed in `public/sfx/`), otherwise browser speech. Clips go through a **voice queue** (`E.voiceFreeAt`) so callouts never overlap; a clip that would wait more than 2.5s is dropped. `VOICE_LINES` lists them: `uno`, `caught`, one per action/wild card kind (`skip`, `reverse`, `draw2`, `draw4`, `wild`, `wild4`, `wild_reverse4`, `wild6`, `wild10`, `skip_all`, `discard_all`, `wild_roulette`), `swap` (7 rule), `rotate` (0 rule) and `draw` ("Draw cards!"). `speak()` only cancels when busy and then waits 60ms (Chrome drops an utterance queued in the same tick as `cancel()`).
+- Director hooks (`director.ts`): a `play` event says the card's clip at landing time (number cards are silent); `swap`/`rotate` events say theirs; a `draw` event with reason `penalty`/`challenge`, or a `roulette`, says "Draw cards!" 650ms later for the victim.
+- **Unplayable draw:** `draw()` in `reducer.ts` already ends the turn when the drawn card can't be played (the `drawn` state only exists for a playable card). The director shows a "NO PLAY" seat label (and a toast for you) so the automatic pass is visible.
 - Card sounds: `cardSlap()` (air swish, cardstock snap, soft table knock; no pitched tones) for play/action/wild, with a triangle accent on action and an arpeggio on wild.
-- `scripts/generate-voices.mjs` (the user runs it with their key) uses ElevenLabs `eleven_v3` with the `[shouts]` audio tag, falling back to `eleven_multilingual_v2`.
+- `scripts/generate-voices.mjs` uses ElevenLabs `eleven_v4` (only stability and similarity settings; v4 rejects style/speaker boost) with the `[shouts]` audio tag, falling back to `eleven_v3`, then `eleven_multilingual_v2`.
 
 ---
 
@@ -382,8 +384,16 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
 
 ## 14. Possible next steps (not done)
 
-- Real recorded voice clips: the user runs `npm run voices`.
 - Rotate the Ably key: it was pasted in chat.
 - Spectator mode, accounts and stats, and match history weren't chosen for v1.
 - Bots can't jump in. Jump-in for humans is fully supported.
 - If Ably's 200-connection limit becomes a constraint, Cloudflare Durable Objects was the alternative realtime design considered at planning time.
+
+---
+
+## 15. Leaving and closing rooms
+
+- **Leave in the lobby / between rounds:** the player is removed. **Leave mid-game:** `removePlayer` in `reducer.ts` turns the seat into a bot (`isBot = true`, `takenOver = true`), keeps the hand, and schedules a bot deadline if it's their turn. Rejoining through the link (`join` as the same id) gives the seat back. `back_to_lobby` and a fresh `start` drop `takenOver` bots.
+- **Host leaves:** the host role passes to the next human (bots, including takeover bots, are skipped).
+- **Close room:** host-only `close_room` action → `room_closed` event (everyone gets a toast and goes home) → `perform` in `room-service.ts` deletes the row (`store.remove`). The room is also deleted when the last human leaves or is kicked (`leave`/`kick` with no human left).
+- UI: lobby has "Leave room" and (host) "Close room"; the in-game settings sheet has the same two. Close asks for confirmation.

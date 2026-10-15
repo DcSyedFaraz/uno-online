@@ -42,6 +42,8 @@ interface Engine {
   nextBeat: number;
   step: number;
   clips: Partial<Record<VoiceLine, AudioBuffer | null>>;
+  /** audio-clock time when the last queued voice clip ends */
+  voiceFreeAt?: number;
   prefs: { muted: boolean; sfx: number; music: boolean };
   /** gesture listeners installed (once per page, survives hot reload) */
   gestureHooked?: boolean;
@@ -224,11 +226,8 @@ export function playSfx(name: Sfx, delayMs = 0) {
       tone("square", 660, 660, t + 0.12, 0.12, 0.07);
       break;
     case "shout":
-      [0, 4, 7].forEach((s) => {
-        tone("sawtooth", N(s + 12), N(s + 12), t, 0.45, 0.07, E.sfxBus, -8);
-        tone("sawtooth", N(s + 12), N(s + 12), t, 0.45, 0.07, E.sfxBus, 8);
-      });
-      tone("sine", N(24), N(24), t + 0.05, 0.4, 0.12);
+      // just a breath of air under the recorded voice; a synth chord here sounded robotic
+      hiss(t, 0.3, 0.07, "bandpass", 700, 2600);
       break;
     case "caught":
       tone("square", 130, 110, t, 0.28, 0.14);
@@ -270,43 +269,75 @@ export function playSfx(name: Sfx, delayMs = 0) {
 // Optional recorded clips in /public/sfx (e.g. generated with `npm run voices` via ElevenLabs).
 // Without them, a pitched-up browser voice plus a synth hit is used instead.
 
-export type VoiceLine = "uno" | "caught";
-const VOICE_TEXT: Record<VoiceLine, string> = { uno: "Uno!", caught: "Gotcha!" };
+export const VOICE_LINES = [
+  "uno", "caught", "skip", "reverse", "draw2", "draw4", "wild", "wild4", "wild_reverse4",
+  "wild6", "wild10", "skip_all", "discard_all", "wild_roulette", "swap", "rotate", "draw",
+] as const;
+export type VoiceLine = (typeof VOICE_LINES)[number];
+const VOICE_TEXT: Record<VoiceLine, string> = {
+  uno: "Uno!", caught: "Gotcha!", skip: "Skipped!", reverse: "Reverse!", draw2: "Plus two!", draw4: "Plus four!",
+  wild: "Wild!", wild4: "Wild draw four!", wild_reverse4: "Reverse plus four!", wild6: "Plus six!", wild10: "Plus ten!",
+  skip_all: "Skip everyone!", discard_all: "Discard all!", wild_roulette: "Color roulette!", swap: "Swap!",
+  rotate: "Pass it around!", draw: "Draw cards!",
+};
+/** Longest a clip may wait behind others before it is dropped (a stale callout is worse than none). */
+const MAX_VOICE_LAG = 2.5;
 const clips = E.clips;
 
-async function loadClip(name: VoiceLine) {
-  if (name in clips || !ensure()) return;
+const loading: Partial<Record<VoiceLine, Promise<void>>> = {};
+const CLIP_VERSION = 2;
+
+function loadClip(name: VoiceLine): Promise<void> {
+  if (loading[name]) return loading[name]!;
+  const c = ensure();
+  if (!c) return Promise.resolve();
   clips[name] = null;
-  try {
-    const res = await fetch(`/sfx/${name}.mp3`, { cache: "force-cache" });
-    if (!res.ok) return;
-    clips[name] = await E.ctx!.decodeAudioData(await res.arrayBuffer());
-  } catch {
-    clips[name] = null;
-  }
+  return (loading[name] = (async () => {
+    // a fresh URL, so a browser that cached an old "not found" can't keep us on the robot voice
+    for (let attempt = 0; attempt < 2 && !clips[name]; attempt++) {
+      try {
+        const res = await fetch(`/sfx/${name}.mp3?v=${CLIP_VERSION}`);
+        if (res.ok) clips[name] = await c.decodeAudioData(await res.arrayBuffer());
+      } catch {
+        // retry once, then the browser voice covers for it
+      }
+    }
+  })());
 }
 
 export function preloadVoices() {
-  void loadClip("uno");
-  void loadClip("caught");
+  for (const n of VOICE_LINES) void loadClip(n);
 }
 
-export function playVoice(name: VoiceLine) {
+/**
+ * Plays a voice clip `delayMs` from now. Clips queue behind each other so callouts never talk over
+ * one another; the browser-voice fallback is used when the recording isn't there.
+ */
+export function playVoice(name: VoiceLine, delayMs = 0) {
   if (prefs.muted) return;
   const c = ensure();
   if (!c) return;
   const buf = clips[name];
   if (buf) {
+    const now = c.currentTime;
+    const wanted = now + delayMs / 1000;
+    const start = Math.max(wanted, E.voiceFreeAt ?? 0);
+    if (start - wanted > MAX_VOICE_LAG) return;
     const src = c.createBufferSource();
     src.buffer = buf;
     const g = c.createGain();
     g.gain.value = 1.15;
     src.connect(g).connect(E.sfxBus);
-    src.start();
+    src.start(start);
+    E.voiceFreeAt = start + buf.duration + 0.06;
     return;
   }
-  if (!(name in clips)) void loadClip(name);
-  speak(VOICE_TEXT[name], name === "uno");
+  // not decoded yet: wait for the recording (a moment) instead of falling straight to the robot voice
+  void loadClip(name).then(() => {
+    if (clips[name]) playVoice(name, delayMs);
+    else if (delayMs > 0) setTimeout(() => speak(VOICE_TEXT[name], name === "uno"), delayMs);
+    else speak(VOICE_TEXT[name], name === "uno");
+  });
 }
 
 /** Browser text-to-speech fallback, pushed higher and faster so it sounds like a shout. */

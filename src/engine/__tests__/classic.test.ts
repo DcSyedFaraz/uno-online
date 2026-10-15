@@ -178,6 +178,26 @@ describe("classic play", () => {
     expect(g.turnId).toBe("p1");
   });
 
+  it("an unplayable draw never leaves the player in a 'drawn' state", () => {
+    const s = arrange(base(), { turn: "p0", top: num("red", 5), hands: { p0: [num("blue", 1)] } });
+    s.drawPile.push(num("green", 2));
+    const g = new Game(s);
+    g.act("p0", { type: "draw" });
+    expect(g.state.turn).toEqual({ kind: "play" });
+    expect(g.turnId).toBe("p1");
+    expect(() => g.act("p0", { type: "pass" })).toThrow(RuleError);
+  });
+
+  it("draw-until-playable keeps drawing past unplayable cards, then offers the playable one", () => {
+    const s = arrange(startedGame({ players: 3, settings: { drawUntilPlayable: true } }), { turn: "p0", top: num("red", 5), hands: { p0: [num("blue", 1)] } });
+    const playable = num("red", 9);
+    s.drawPile.push(playable, num("green", 2), num("yellow", 3));
+    const g = new Game(s);
+    g.act("p0", { type: "draw" });
+    expect(g.hand("p0")).toHaveLength(4);
+    expect(g.state.turn).toEqual({ kind: "drawn", cardId: playable.id });
+  });
+
   it("reshuffles the discard pile when the draw pile is empty", () => {
     const s = arrange(base(), { turn: "p0", top: num("red", 5), hands: { p0: [num("blue", 1)] } });
     const total = countCards(s);
@@ -414,17 +434,17 @@ describe("lobby", () => {
     expect(s.hostId).toBe("g");
   });
 
-  it("a player leaving mid-round returns their cards and play continues", () => {
+  it("a player leaving mid-round is replaced by a bot that keeps the cards and plays on", () => {
     const s0 = startedGame({ players: 3 });
     const g = new Game(arrange(s0, { turn: "p1", top: num("red", 5), hands: { p1: [num("red", 1), num("blue", 2)] } }));
     const total = countCards(g.state);
     g.act("p1", { type: "leave" });
-    expect(g.player("p1").status).toBe("left");
-    expect(g.turnId).toBe("p2");
+    expect(g.player("p1").status).toBe("active");
+    expect(g.player("p1").isBot).toBe(true);
     expect(countCards(g.state)).toBe(total);
-    g.act("p0", { type: "leave" });
-    expect(g.state.phase).toBe("game_over");
-    expect(g.state.gameWinnerId).toBe("p2");
+    g.act("system", { type: "timeout" }, 5000);
+    expect(g.turnId).not.toBe("p1");
+    expect(countCards(g.state)).toBe(total);
   });
 });
 
@@ -459,5 +479,55 @@ describe("views", () => {
     const merged = mergeSettings(legacy as typeof CLASSIC_SETTINGS, { jumpIn: true });
     expect(merged.roundTimerMin).toBe(0);
     expect(merged.jumpIn).toBe(true);
+  });
+});
+
+describe("leaving and closing the room", () => {
+  it("leaving the lobby removes the player; the next human becomes host", () => {
+    const s = startedGame({ players: 3 });
+    const lobby = structuredClone(s);
+    lobby.phase = "lobby";
+    const g = new Game(lobby);
+    g.act("p0", { type: "leave" });
+    expect(g.state.players.map((p) => p.id)).toEqual(["p1", "p2"]);
+    expect(g.state.hostId).toBe("p1");
+    expect(g.events.some((e) => e.t === "host_changed")).toBe(true);
+  });
+
+  it("leaving mid-game hands the seat to a bot (hand kept) and passes the host role on", () => {
+    const g = new Game(startedGame({ players: 3 }));
+    const cards = g.hand("p0").length;
+    g.act("p0", { type: "leave" });
+    const p0 = g.player("p0");
+    expect(p0.isBot).toBe(true);
+    expect(p0.takenOver).toBe(true);
+    expect(p0.status).toBe("active");
+    expect(p0.hand).toHaveLength(cards);
+    expect(g.state.hostId).toBe("p1");
+    // it's their turn: the bot gets a deadline and plays it
+    expect(g.turnId).toBe("p0");
+    expect(g.state.deadline).not.toBeNull();
+    g.act("system", { type: "timeout" }, 5000);
+    expect(g.turnId).not.toBe("p0");
+  });
+
+  it("a player who left can rejoin and take the seat back; back-to-lobby drops the bots that replaced leavers", () => {
+    const g = new Game(startedGame({ players: 3 }));
+    g.act("p2", { type: "leave" });
+    g.act("p2", { type: "join", name: "P2", avatar: "🙂" });
+    expect(g.player("p2").isBot).toBe(false);
+    g.act("p2", { type: "leave" });
+    const s = structuredClone(g.state);
+    s.phase = "game_over";
+    const g2 = new Game(s);
+    g2.act(g2.state.hostId, { type: "back_to_lobby" });
+    expect(g2.state.players.some((p) => p.id === "p2")).toBe(false);
+  });
+
+  it("only the host can close the room", () => {
+    const g = new Game(startedGame({ players: 3 }));
+    expect(() => g.act("p1", { type: "close_room" })).toThrow(RuleError);
+    g.act("p0", { type: "close_room" });
+    expect(g.events.some((e) => e.t === "room_closed")).toBe(true);
   });
 });

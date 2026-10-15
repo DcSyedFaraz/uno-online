@@ -93,6 +93,9 @@ export async function perform(code: string, actorId: string, action: Action): Pr
     if (!(await store.update(code, res.state, rec.version, now))) continue;
     const version = rec.version + 1;
     await broadcast(code, rec.state, res, version, now);
+    // the host closed the room, or the last human walked out: nobody is left to play
+    const nobodyLeft = !res.state.players.some((p) => !p.isBot && p.status !== "left");
+    if (action.type === "close_room" || ((action.type === "leave" || action.type === "kick") && nobodyLeft)) await store.remove(code);
     return messageFor(res.state, version, actorId, res, now);
   }
   throw new HttpError(409, "The table is busy — try again");

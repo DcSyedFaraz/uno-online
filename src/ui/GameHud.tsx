@@ -175,8 +175,12 @@ export function SettingsSheet() {
   const setReduceMotion = useUi((s) => s.setReduceMotion);
   const [prefs, setPrefs] = useState(audioPrefs.get());
   const router = useRouter();
+  const isHost = useGame((s) => !!s.you && s.pub?.hostId === s.you);
   const leave = async () => {
     if (await sendAction({ type: "leave" })) router.push("/");
+  };
+  const closeRoom = async () => {
+    if (window.confirm("Close this room for everyone? It will be deleted.") && (await sendAction({ type: "close_room" }))) router.push("/");
   };
   return (
     <Sheet open={open} onClose={() => setOpen(false)} title="Settings">
@@ -229,6 +233,11 @@ export function SettingsSheet() {
         <button className="btn w-full bg-white text-neon-red shadow-[0_3px_0_rgba(10,30,90,0.35)]" onClick={leave}>
           Leave room
         </button>
+        {isHost && (
+          <button className="btn w-full bg-neon-red text-white shadow-[0_3px_0_rgba(10,30,90,0.35)]" onClick={closeRoom}>
+            Close room for everyone
+          </button>
+        )}
       </div>
     </Sheet>
   );

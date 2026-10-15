@@ -2,8 +2,8 @@
 
 import * as THREE from "three";
 import { BRAND } from "@/brand";
-import { playSfx, playVoice } from "@/audio/sound";
-import type { Card, GameEvent, PublicView } from "@/engine";
+import { playSfx, playVoice, type VoiceLine } from "@/audio/sound";
+import type { Card, CardKind, GameEvent, PublicView } from "@/engine";
 import { isDrawCard, isWild } from "@/engine/cards";
 import { onBatch, playerName, useGame, type Batch } from "@/client/store/game-store";
 import { CARD_H } from "../cards/cardGeometry";
@@ -86,6 +86,15 @@ function colorOf(card: Card): string {
   return card.color ? COLOR_HEX[card.color] : COLOR_HEX.wild;
 }
 
+/** Shouted callout for each action / wild card (number cards stay silent). */
+const CARD_VOICE: Partial<Record<CardKind, VoiceLine>> = {
+  skip: "skip", reverse: "reverse", draw2: "draw2", draw4: "draw4", wild: "wild", wild4: "wild4",
+  wild_reverse4: "wild_reverse4", wild6: "wild6", wild10: "wild10", skip_all: "skip_all",
+  discard_all: "discard_all", wild_roulette: "wild_roulette",
+};
+/** Pause after a card's own callout before "Draw cards!" for whoever takes the penalty. */
+const DRAW_VOICE_GAP = 650;
+
 function cardSfx(card: Card) {
   if (isWild(card)) return "wild" as const;
   if (card.kind === "number") return "play" as const;
@@ -145,6 +154,8 @@ export function choreograph(b: Batch) {
         scene.addPulse("shockwave", discardPos, colorOf(e.card), land);
         if (e.card.kind !== "number") scene.addPulse("burst", discardPos, colorOf(e.card), land);
         playSfx(cardSfx(e.card), land - 60);
+        const cardVoice = CARD_VOICE[e.card.kind];
+        if (cardVoice) playVoice(cardVoice, land);
         if (e.jumpIn) scene.addSeatFx(e.pid, "JUMP-IN!", "gold", true, t);
         if (isDrawCard(e.card)) sceneRef.shake = Math.max(sceneRef.shake, e.card.kind === "wild10" ? 1 : 0.35);
         t += 160;
@@ -160,6 +171,12 @@ export function choreograph(b: Batch) {
           }
         }
         for (let i = 0; i < Math.min(e.count, 5); i++) playSfx("draw", t + i * 80);
+        if (e.reason === "penalty" || e.reason === "challenge") playVoice("draw", t + DRAW_VOICE_GAP);
+        // a plain draw that can't be played ends the turn by itself: say so
+        if (e.reason === "draw" && next.phase === "playing" && next.turnPlayerId !== e.pid && !ev.some((x) => x.t === "eliminated" && x.pid === e.pid)) {
+          scene.addSeatFx(e.pid, "NO PLAY", "white", false, t + 450);
+          if (e.pid === you) game.toast("Nothing you can play, turn passes", "info");
+        }
         if (penalty) {
           scene.addSeatFx(e.pid, `+${e.count}`, "red", e.count >= 4, t + 200);
           if (e.count >= 4) sceneRef.shake = Math.max(sceneRef.shake, Math.min(1, e.count / 10));
@@ -199,6 +216,7 @@ export function choreograph(b: Batch) {
         scene.addSeatFx(e.a, "SWAP!", "wild", true, t);
         scene.addSeatFx(e.b, "SWAP!", "wild", true, t);
         playSfx("swap", t + 150);
+        playVoice("swap", t + 100);
         t += 700;
         break;
       }
@@ -216,6 +234,7 @@ export function choreograph(b: Batch) {
           }
         });
         playSfx("swap", t + 150);
+        playVoice("rotate", t + 100);
         t += 700;
         break;
       }
@@ -242,6 +261,7 @@ export function choreograph(b: Batch) {
           playSfx("draw", t + i * 170);
         });
         scene.addSeatFx(e.pid, `+${e.cards.length}`, "red", true, t + e.cards.length * 170);
+        playVoice("draw", t + DRAW_VOICE_GAP);
         t += e.cards.length * 170 + 200;
         break;
       }
@@ -294,6 +314,10 @@ export function choreograph(b: Batch) {
         break;
       case "player_left":
         if (e.pid !== you) game.toast(`${prev ? playerName(prev, e.pid) : "A player"} left`, "info");
+        break;
+      case "room_closed":
+        game.toast("The host closed the room", "warn");
+        if (typeof window !== "undefined") setTimeout(() => window.location.replace(`${window.location.origin}/`), 1400);
         break;
       case "host_changed":
         if (e.pid === you) game.toast("You're the host now", "good");
