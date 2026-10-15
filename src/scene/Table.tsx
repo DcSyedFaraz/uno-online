@@ -8,10 +8,9 @@ import { useGame } from "@/client/store/game-store";
 import { COLOR_HEX, sceneRef } from "./sceneStore";
 import type { TableDims } from "./layout/layout";
 
-/** The red "stage" around the table. The floor is unlit, so this is exactly what the fog fades to. */
+/** The red "stage" (the Lounge room and the landing page). The floor is unlit, so this is exactly what the fog fades to. */
 export const STAGE = {
-  backdrop: "#a3121c",
-  dots: "#b8202a",
+  backdrop: "#c71c2d",
 } as const;
 
 function ellipseShape(rx: number, rz: number) {
@@ -37,10 +36,10 @@ function feltTexture(): THREE.CanvasTexture {
   const cy = h * 0.48;
 
   const g = ctx.createRadialGradient(cx, cy, 30, cx, cy, w * 0.6);
-  g.addColorStop(0, "#ffc94a");
-  g.addColorStop(0.28, "#ff8a2a");
-  g.addColorStop(0.62, "#f5462c");
-  g.addColorStop(1, "#d42029");
+  g.addColorStop(0, "#ffd457");
+  g.addColorStop(0.28, "#ff922e");
+  g.addColorStop(0.62, "#ff4a2e");
+  g.addColorStop(1, "#e3222c");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 
@@ -48,7 +47,7 @@ function feltTexture(): THREE.CanvasTexture {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.fillStyle = "#fff6d0";
-  ctx.globalAlpha = 0.07;
+  ctx.globalAlpha = 0.1;
   const rays = 28;
   for (let i = 0; i < rays; i += 2) {
     const a0 = (i / rays) * Math.PI * 2;
@@ -88,59 +87,13 @@ function feltTexture(): THREE.CanvasTexture {
   ctx.globalAlpha = 1;
   const edge = ctx.createRadialGradient(cx, h / 2, w * 0.36, cx, h / 2, w * 0.56);
   edge.addColorStop(0, "rgba(120,0,10,0)");
-  edge.addColorStop(1, "rgba(120,0,10,0.32)");
+  edge.addColorStop(1, "rgba(150,10,20,0.18)");
   ctx.fillStyle = edge;
   ctx.fillRect(0, 0, w, h);
 
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
-  return t;
-}
-
-/** Halftone dots for the stage floor (repeats). */
-function floorTexture(): THREE.CanvasTexture {
-  const s = 64;
-  const c = document.createElement("canvas");
-  c.width = s;
-  c.height = s;
-  const ctx = c.getContext("2d")!;
-  ctx.fillStyle = STAGE.backdrop;
-  ctx.fillRect(0, 0, s, s);
-  ctx.fillStyle = STAGE.dots;
-  for (const [x, y] of [
-    [s / 4, s / 4],
-    [(s * 3) / 4, (s * 3) / 4],
-  ]) {
-    ctx.beginPath();
-    ctx.arc(x, y, s * 0.11, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(60, 60);
-  t.anisotropy = 4;
-  return t;
-}
-
-/** Soft warm light pool and contact shadow around the table, painted on the floor. */
-function poolTexture(): THREE.CanvasTexture {
-  const s = 512;
-  const c = document.createElement("canvas");
-  c.width = s;
-  c.height = s;
-  const ctx = c.getContext("2d")!;
-  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-  g.addColorStop(0, "rgba(60,0,6,0.55)");
-  g.addColorStop(0.42, "rgba(60,0,6,0.35)");
-  g.addColorStop(0.5, "rgba(255,150,60,0.28)");
-  g.addColorStop(0.75, "rgba(255,120,50,0.1)");
-  g.addColorStop(1, "rgba(255,120,50,0)");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, s, s);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
 
@@ -250,8 +203,6 @@ function DirectionRing({ d }: { d: TableDims }) {
 export function Table({ d }: { d: TableDims }) {
   const shape = useMemo(() => ellipseShape(d.rx, d.rz), [d.rx, d.rz]);
   const felt = useMemo(() => (typeof document === "undefined" ? null : feltTexture()), []);
-  const floor = useMemo(() => (typeof document === "undefined" ? null : floorTexture()), []);
-  const pool = useMemo(() => (typeof document === "undefined" ? null : poolTexture()), []);
   const feltGeom = useMemo(() => {
     const g = new THREE.ShapeGeometry(ellipseShape(d.rx * 0.985, d.rz * 0.985), 96);
     const pos = g.getAttribute("position");
@@ -266,19 +217,10 @@ export function Table({ d }: { d: TableDims }) {
 
   return (
     <group>
-      {/* floor: unlit so it matches the fog and background exactly */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.72, 0]}>
-        <planeGeometry args={[120, 120]} />
-        <meshBasicMaterial map={floor ?? undefined} color="#ffffff" />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.7, 0]}>
-        <planeGeometry args={[d.rx * 3.6, d.rz * 3.6]} />
-        <meshBasicMaterial map={pool ?? undefined} transparent depthWrite={false} />
-      </mesh>
       {/* table body */}
       <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, -0.066, 0]} castShadow receiveShadow>
         <extrudeGeometry args={[shape, { depth: 0.55, bevelEnabled: true, bevelSize: 0.08, bevelThickness: 0.06, bevelSegments: 4, curveSegments: 96 }]} />
-        <meshStandardMaterial color="#9c1019" roughness={0.45} metalness={0.05} />
+        <meshStandardMaterial color="#b8141f" roughness={0.45} metalness={0.05} />
       </mesh>
       {/* felt */}
       <mesh geometry={feltGeom} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]} receiveShadow>

@@ -9,6 +9,8 @@ export const CARD_W = 0.62;
 export const CARD_H = 0.93;
 export const CARD_T = 0.014;
 const RADIUS = 0.056;
+/** smooth corners even on the 1.7× pile cards */
+const CORNER_SEGMENTS = 12;
 
 function roundedShape(w: number, h: number, r: number): THREE.Shape {
   const s = new THREE.Shape();
@@ -48,18 +50,18 @@ export function cardGeometry(): THREE.BufferGeometry {
   if (geometry) return geometry;
   const shape = roundedShape(CARD_W, CARD_H, RADIUS);
 
-  const front = new THREE.ShapeGeometry(shape, 6);
+  const front = new THREE.ShapeGeometry(shape, CORNER_SEGMENTS);
   remapUv(front, false);
   front.translate(0, 0, CARD_T / 2);
 
-  const back = new THREE.ShapeGeometry(shape, 6);
+  const back = new THREE.ShapeGeometry(shape, CORNER_SEGMENTS);
   remapUv(back, false);
   back.rotateY(Math.PI);
   back.translate(0, 0, -CARD_T / 2);
   // rotateY mirrored X, so the UVs computed before rotation now read correctly from behind
 
   // side walls only: ExtrudeGeometry is non-indexed, group with materialIndex 1 holds the sides
-  const extruded = new THREE.ExtrudeGeometry(shape, { depth: CARD_T, bevelEnabled: false, curveSegments: 6 });
+  const extruded = new THREE.ExtrudeGeometry(shape, { depth: CARD_T, bevelEnabled: false, curveSegments: CORNER_SEGMENTS });
   extruded.translate(0, 0, -CARD_T / 2);
   const sides = extruded.groups.find((gr) => gr.materialIndex === 1)!;
   const edge = new THREE.BufferGeometry();
@@ -105,7 +107,14 @@ export function backMaterial(): THREE.MeshStandardMaterial {
 }
 
 export function edgeMaterial(): THREE.MeshStandardMaterial {
-  return (edgeMat ??= new THREE.MeshStandardMaterial({ color: "#fffdf8", roughness: 0.7 }));
+  // a shade darker than the white border, so card outlines and the deck's layers read clearly
+  return (edgeMat ??= new THREE.MeshStandardMaterial({ color: "#e4dac8", roughness: 0.7 }));
+}
+
+let faceShape: THREE.ShapeGeometry | null = null;
+/** The card's rounded outline as a flat shape (for overlays that must not poke out at the corners). */
+export function cardFaceGeometry(): THREE.ShapeGeometry {
+  return (faceShape ??= new THREE.ShapeGeometry(roundedShape(CARD_W, CARD_H, RADIUS), CORNER_SEGMENTS));
 }
 
 export function cardMaterials(card: Pick<Card, "kind" | "value" | "color"> | null, tint: Color | null = null): THREE.Material[] {

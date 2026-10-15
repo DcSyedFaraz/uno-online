@@ -1,8 +1,8 @@
 "use client";
 
 import { PerformanceMonitor } from "@react-three/drei";
-import { Canvas, useThree } from "@react-three/fiber";
-import { useEffect, useLayoutEffect, useMemo } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { IS_TOUCH } from "@/client/device";
 import { useGame } from "@/client/store/game-store";
@@ -13,6 +13,7 @@ import { CardActors } from "./cards/CardActors";
 import { CameraRig } from "./CameraRig";
 import { Confetti, Pulses } from "./fx/Fx";
 import { cameraFov, computeSeats, handTopPx, tableDims } from "./layout/layout";
+import { Room } from "./room/Room";
 import { actorTransforms, sceneRef } from "./sceneStore";
 import { STAGE, Table } from "./Table";
 import { Backs } from "./zones/Backs";
@@ -23,11 +24,23 @@ import { TurnMarker } from "./zones/TurnMarker";
 
 type Tier = "high" | "medium" | "low";
 
-/** Pixel ratio per tier. It only changes when the tier does, never on its own. */
+/**
+ * Pixel ratio per tier. It only changes when the tier does, never on its own.
+ * Phones start at medium: a 2× canvas keeps cards crisp next to the HUD on 3× screens.
+ */
 function tierDpr(tier: Tier): [number, number] {
-  if (tier === "high") return [1, IS_TOUCH ? 1.75 : 2];
-  if (tier === "medium") return [1, 1.5];
+  if (tier === "high") return [1, IS_TOUCH ? 2.5 : 2];
+  if (tier === "medium") return [1, 2];
   return [0.75, 1];
+}
+
+/** A soft light from the camera, so cards facing you (your hand, the propped-up top card) are lit evenly. */
+function FrontFill() {
+  const light = useRef<THREE.DirectionalLight>(null);
+  useFrame(({ camera }) => {
+    light.current?.position.copy(camera.position);
+  });
+  return <directionalLight ref={light} intensity={0.85} color="#ffffff" />;
 }
 
 function World() {
@@ -65,8 +78,9 @@ function World() {
       <color attach="background" args={[STAGE.backdrop]} />
       <fog attach="fog" args={[STAGE.backdrop, 16, 42]} />
       <CameraRig d={d} />
-      <hemisphereLight args={["#fff3df", "#b3262c", 1.5]} />
-      <ambientLight intensity={0.35} />
+      <hemisphereLight args={["#fff6e6", "#ffb39a", 1.45]} />
+      <ambientLight intensity={0.3} />
+      <FrontFill />
       <directionalLight
         key={shadowSize}
         position={[2, 9, 5]}
@@ -83,6 +97,7 @@ function World() {
         shadow-radius={3}
       />
 
+      <Room d={d} seats={seats} />
       <Table d={d} />
       <TurnMarker />
       <Backs />
@@ -117,7 +132,7 @@ export default function GameCanvas({ paused = false }: { paused?: boolean }) {
       shadows="percentage"
       dpr={tierDpr(tier)}
       frameloop={paused ? "never" : "always"}
-      gl={{ antialias: true, stencil: false, powerPreference: "high-performance", toneMapping: THREE.NeutralToneMapping, toneMappingExposure: 1 }}
+      gl={{ antialias: true, stencil: false, powerPreference: "high-performance", toneMapping: THREE.NeutralToneMapping, toneMappingExposure: 1.1 }}
       camera={{ position: [0, 9, 8], fov: 38, near: 1.2, far: 120 }}
       // the mobile address bar slides in and out; don't reallocate buffers on every pixel of it
       resize={{ debounce: { scroll: 50, resize: 180 } }}

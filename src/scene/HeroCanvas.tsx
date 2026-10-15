@@ -64,12 +64,12 @@ export default function HeroCanvas() {
       className="!fixed inset-0"
       dpr={[1, IS_TOUCH ? 1.75 : 2]}
       camera={{ position: [0, 1.2, 8.5], fov: 42, near: 0.5, far: 60 }}
-      gl={{ antialias: true, stencil: false, toneMapping: THREE.NeutralToneMapping }}
+      gl={{ antialias: true, stencil: false, toneMapping: THREE.NeutralToneMapping, toneMappingExposure: 1.1 }}
       resize={{ debounce: { scroll: 50, resize: 180 } }}
     >
       <color attach="background" args={[STAGE.backdrop]} />
       <fog attach="fog" args={[STAGE.backdrop, 9, 19]} />
-      <hemisphereLight args={["#fff3df", "#b3262c", 1.6]} />
+      <hemisphereLight args={["#fff6e6", "#ffb39a", 1.55]} />
       <directionalLight position={[2, 6, 6]} intensity={1.8} color="#fff2dc" />
       <Orbit />
     </Canvas>

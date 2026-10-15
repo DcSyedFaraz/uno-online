@@ -26,7 +26,8 @@ NEONO is a 3D, neon-styled online card game modeled on classic UNO, for 2–10 p
 | Joining | 6-character room code or share link `/r/CODE`, plus copy link, Web Share and a QR code in the lobby. Joining is allowed in the lobby or between rounds, not mid-round. |
 | Rules | **New rooms start from `DEFAULT_SETTINGS`**: classic plus **Equal-or-higher stacking**, the **Discard All** card and a **3-minute round clock** (user request). `CLASSIC_SETTINGS` stays all-off and is what tests build on. The host opens **More rules**, where every extra is its **own switch**. The user explicitly rejected a single "No Mercy" bundle, so there are no presets, only "Reset to classic". |
 | Round clock | Basic setting **Time limit**: Off / 3 / 5 / 7 min (default 3), per round. At time-up the active player with the **fewest card points** wins (ties: fewer cards, then turn order from the current player) and scores as usual. **The last minute plays at 2×**: turn timer halved, bots twice as fast. |
-| Visuals | Full 3D (React Three Fiber) in a **bright "red stage" look modeled on the official UNO! Android app**: red-orange felt with a center burst, gold rim, white-bordered bright cards, blue HUD panels. **No post-processing (no bloom).** The table is **one fixed oval on every screen**; only the camera adapts. |
+| Visuals | Full 3D (React Three Fiber) in a **bright "red stage" look modeled on the official UNO! Android app**: red-orange felt with a center burst, gold rim, white-bordered bright cards, blue HUD panels. **No post-processing (no bloom).** Brightness comes from lighting: exposure 1.1, a warm (not red) hemisphere ground and a camera-following `FrontFill` light so cards facing you aren't dull. The table is **one fixed oval on every screen**; only the camera adapts. |
+| Room themes | A **room around the table** (`src/scene/room/`): a chair behind every opponent's avatar (the active player's lights up), a rug and a few props. Three themes, a **per-viewer** choice in Settings → Room (`useUi.roomTheme`, localStorage): **Lounge** (default: red stage, blue chairs, lamps, plants), **Casino** (purple carpet, red velvet armchairs, neon signs, slot machines, stools), **Living room** (wood floor, wooden chairs, sofa, bookshelf). The Low tier drops the props. |
 | Orientation | **Rooms (lobby and game) are landscape-only on phones and tablets.** Portrait shows a rotate prompt (`RotateGate`) with a "Play fullscreen" button that also locks landscape (Android Chrome; iPhones can't). The home page and join form work in portrait. A web manifest (`display: fullscreen`, `orientation: landscape`) makes home-screen installs open sideways. |
 | Card art | **Original NEONO art, brightened**, not UNO's trade dress: white border, bright body, light tilted lens, ink-outlined glyphs; wilds are purple and **take the picked color once played**; backs are royal blue with a red lens and the NEONO wordmark. |
 | Draw | **Tap the 3D deck** (glowing deck plus a bobbing 3D arrow). There is no Draw button, just a hint pill. Keyboard `D` also draws. |
@@ -59,6 +60,7 @@ User feedback that shaped the build, in order:
 21. Looked messy. Replaced 12 loose chevrons with a clean ring and three arrows; tidied the discard pile.
 22. Rings should go behind the pile. Floor effects now sit just above the felt and draw first.
 23. Wanted stacking (equal or higher) and Discard All on by default, +2/+4 drawn automatically when you can't stack or challenge, and a 3/5/7-minute round clock where the fewest card points wins and the last minute runs at 2×. Done (`DEFAULT_SETTINGS`, `takePenalty`, `roundEndsAt`).
+24. Too dull, table felt empty, cards looked low quality. Brighter lighting and palette, themed rooms with chairs, sharper cards (higher DPR caps, bolder corner indices, darker card edge, hand drop shadows). See §8.
 
 ---
 
@@ -250,11 +252,12 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
 ## 8. 3D scene (`src/scene`)
 
 - **`GameCanvas.tsx`** mounts in the **lobby as well** as in game, so the deal animation plays from the first frame. It contains:
-  - A hemisphere light, a soft ambient and one warm directional key light with PCF shadows (`shadows="percentage"`). **No `Environment`, no point lights, no Sparkles.**
+  - A hemisphere light (warm ground, not red: a red ground tinted every camera-facing card), a soft ambient, one warm directional key light with PCF shadows (`shadows="percentage"`), and **`FrontFill`**, a shadowless light that follows the camera so your hand is evenly lit. Exposure 1.1. **No `Environment`, no point lights, no Sparkles.**
   - Table, TurnMarker, Backs, DeckTarget, CardActors, Ghosts, Pulses, Confetti and `SeatProjector`
   - **No `EffectComposer`** (the post-processing packages were uninstalled): native MSAA (`antialias: true`) and `NeutralToneMapping`, so card colors stay true
   - `paused` prop → `frameloop="never"` while the rotate prompt is up
-  - Pixel ratio per tier (`tierDpr`): high `[1, 2]` (touch `[1, 1.75]`), medium `[1, 1.5]`, low `[0.75, 1]`; low also turns shadows off
+  - Pixel ratio per tier (`tierDpr`): high `[1, 2]` (touch `[1, 2.5]`), medium `[1, 2]`, low `[0.75, 1]`; low also turns shadows off. Phones start at medium; the old 1.5 cap made cards look blurry next to the 3× HUD.
+  - `Room` (before `Table`): floor, rug, chairs and props for the viewer's theme
   - `PerformanceMonitor` that can only **step the auto tier down** (`stepDownAutoTier`); auto starts at high on desktop and medium on touch
   - Writes the CSS variable **`--hand-top`** (px from the bottom to the top of your hand, from `handTopPx`) so the HUD row sits just above the hand
   - A debug handle in dev: `window.__neono = { sceneRef, useGame, useUi, actorTransforms, scene }`
@@ -269,7 +272,8 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
   - Discard pile: a tidy stack (small turns and offsets); the propped top card tilts 0.38 rad when compact.
 - **`cards/`**:
   - `cardTextures.ts` draws every face in **Canvas 2D** (original art; color-blind shape icons in the corners). Glyphs and corner indices get an ink outline via `outlined()` (a silhouette stamped in a circle, works for text and shapes). No glow/emissive maps. `faceTextures(card, tint)` caches per face **and per wild tint**. The font family comes from the `--font-unbounded` CSS variable, because next/font generates the family name. `refreshTexturesWhenFontsReady` redraws once the font loads.
-  - `cardGeometry.ts`: a rounded card with three material groups (front, back, edge). **Materials are matte `MeshStandardMaterial`; no clearcoat, no emissive**, because of the glare complaint. `cardMaterials(card, tint)`.
+  - `cardGeometry.ts`: a rounded card with three material groups (front, back, edge), 12 segments per corner. **Materials are matte `MeshStandardMaterial`; no clearcoat, no emissive**, because of the glare complaint. The edge is a warm grey (`#e4dac8`), a shade darker than the white border, so outlines and deck layers read. `cardMaterials(card, tint)`; `cardFaceGeometry()` is the rounded outline for overlays (the unplayable shade).
+  - Card art (`cardTextures.ts`): pure white border with a hairline and an inner keyline, big outlined corner indices (82px single digit) and colour-blind shapes sized to survive minification, anisotropy 16. Hand cards also get a soft drop shadow between `HAND_Z_STEP` layers.
   - `CardActors.tsx` holds **one keyed list** covering hand, pending and pile cards, so a card keeps its 3D object as it moves between zones.
     - Each actor eases toward its zone's target every frame (`maath` damping).
     - Adds an arc and a roll while travelling.
@@ -288,8 +292,13 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
   - Shout banners, voice, sounds and toasts.
   - It recomputes seats itself on each batch. `shoutNow(you)` plays your own shout instantly on click; the server echo is de-duplicated.
   - **`anim/callout.ts`** `describeMove(ev, next, you)`: turns one move's events into a single headline (`{icon, title, sub, color}`) for action/wild cards, swaps, roulette, challenges; null for plain moves. The director shows it via `useScene.showCallout` as the card lands (≈2s). Toasts that duplicated it were removed.
-- **`CameraRig.tsx`**: fits the fixed table (portrait gets a steeper view and wider margins), keeps fog just behind the table, and adds pointer parallax and shake. **Compact (landscape phones): a flatter 40° view at a fixed distance (9.9) and target z 0.64, solved numerically so the far chips sit under the top bar and the piles at ~43% height; the near rim tucks under the big hand.** Its `useFrame` runs at priority -1. **`Table.tsx`**: `STAGE.backdrop` red (background, fog and the **unlit** halftone floor all match), a warm light pool under the table, a deep-red body, red-orange felt with sunburst rays and the embossed logo, a gold bumper plus an inner band that lerps to the current color, and the **direction ring**: a static white ellipse with three arrowheads in the current color gliding along it (faster after a reverse).
+- **`CameraRig.tsx`**: fits the fixed table (portrait gets a steeper view and wider margins), keeps fog just behind the table, and adds pointer parallax and shake. **Compact (landscape phones): a flatter 40° view at a fixed distance (9.9) and target z 0.64, solved numerically so the far chips sit under the top bar and the piles at ~43% height; the near rim tucks under the big hand.** Its `useFrame` runs at priority -1. **`Table.tsx`**: a red body, red-orange felt with sunburst rays and the embossed logo, a gold bumper plus an inner band that lerps to the current color, and the **direction ring**: a static white ellipse with three arrowheads in the current color gliding along it (faster after a reverse).
 - **`sceneStore.ts`**: `sceneRef` (mutable per-frame layout), `spawnHints`, `actorTransforms`, `wildColors`, `COLOR_HEX` (= `NEON` in `src/brand.ts`, the one palette), and `useScene` (callout, ghosts, seat effects, pulses, confetti, shouts). **`HeroCanvas.tsx`**: the orbiting cards on the landing and join pages (same no-post-processing setup, red stage).
+- **`room/`** (`Room.tsx`, `themes.ts`, `Chairs.tsx`, `props.tsx`, `kit.ts`): everything around the table, built from primitives (three's `RoundedBoxGeometry`, cylinders, painted canvas textures). No model files.
+  - `THEMES[theme]`: backdrop (= background = fog = the floor's average colour, because the floor is **unlit**), floor tile and rug painters, chair spec, prop placements. `Room` sets `scene.background` and fog colour imperatively, so `CameraRig`'s fog distances survive a theme switch.
+  - Layers: floor plane at `FLOOR_Y - 0.02`, rug decal, table light pool, then per-prop blob shadows and lamp pools, all `depthWrite: false` + `polygonOffset` (no z-fighting). The floor can't receive real shadows, so props use blob decals and don't cast.
+  - `Chairs`: one per opponent seat at `ellipsePoint(d, angle, 1.4)` facing the centre, scaled down when neighbours are close, eased on seat changes; each owns its fabric material and lerps it to the theme's `active` colour on that player's turn.
+  - Props stay out of the top-right corner (the reaction bar covers it). `kit.ts` caches geometries, materials and painted textures, so ten chairs cost a handful of GPU resources.
 - **Floor effects** (shockwaves, deck glow, turn spotlight, direction ring) sit at y ≤ 0.018 with `renderOrder={-1}` and normal blending, so they always pass **under** the piles. Additive blending and HDR (>1) colors were removed: they wash out to white on the bright felt.
 
 ---
@@ -309,7 +318,7 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
 - **Theme (`globals.css`)**: stage-red `--bg`, `--ink` (#14213d) for outlines and dark text, `--gold`, green `--accent`. Component classes live in **`@layer components`** so Tailwind utilities can override them: `.glass` (solid blue panel with a light rim and a chunky bottom edge, **no blur**), `.btn-primary` (chunky green), `.btn-ghost`, `.input` (white), `.toon-text` (ink stroke + drop shadow), `.stage-vignette`, `.turn-sideways`. The **`short:`** variant (`max-height: 520px`) compacts everything for landscape phones; safe-area insets pad the HUD (`viewportFit: "cover"`).
 - `Scoreboard.tsx`: round and game results with revealed hands; appears 1.3s after the round ends.
 - `Social.tsx`: chat dock and reaction bar. Reactions float up as seat badges.
-- `uiStore.ts`: sort mode, quality tier, reduce-motion setting, sheet visibility, `sortHand`.
+- `uiStore.ts`: sort mode, quality tier, reduce-motion setting, room theme (`roomTheme`, Settings → Room), sheet visibility, `sortHand`.
 
 **Zustand rule:** never return a freshly built array or object from a selector, e.g. `useGame(s => s.chat.filter(...))`. That causes an infinite render loop. Select the raw value, then `useMemo`.
 

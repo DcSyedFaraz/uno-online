@@ -7,6 +7,8 @@ import { loadPref, savePref } from "@/client/profile";
 
 export type SortMode = "color" | "number" | "none";
 export type Quality = "auto" | "high" | "medium" | "low";
+/** the room around the table (a per-viewer look; the game itself is the same) */
+export type RoomTheme = "lounge" | "casino" | "living";
 
 interface UiStore {
   sortMode: SortMode;
@@ -14,15 +16,23 @@ interface UiStore {
   /** resolved tier when quality is auto: starts per device and only ever steps down */
   autoTier: "high" | "medium" | "low";
   reduceMotion: boolean;
+  roomTheme: RoomTheme;
   settingsOpen: boolean;
   rulesOpen: boolean;
   setSort(m: SortMode): void;
   setQuality(q: Quality): void;
   stepDownAutoTier(): void;
   setReduceMotion(r: boolean): void;
+  setRoomTheme(t: RoomTheme): void;
   setSettingsOpen(o: boolean): void;
   setRulesOpen(o: boolean): void;
 }
+
+const ROOMS: RoomTheme[] = ["lounge", "casino", "living"];
+const storedRoom = (): RoomTheme => {
+  const r = loadPref<RoomTheme>("room", "lounge");
+  return ROOMS.includes(r) ? r : "lounge";
+};
 
 const prefersReduced = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
@@ -31,6 +41,7 @@ export const useUi = create<UiStore>((set) => ({
   quality: loadPref<Quality>("quality", "auto"),
   autoTier: IS_TOUCH ? "medium" : "high",
   reduceMotion: loadPref<boolean>("reduceMotion", !!prefersReduced()),
+  roomTheme: storedRoom(),
   settingsOpen: false,
   rulesOpen: false,
   setSort(sortMode) {
@@ -48,6 +59,10 @@ export const useUi = create<UiStore>((set) => ({
   setReduceMotion(reduceMotion) {
     savePref("reduceMotion", reduceMotion);
     set({ reduceMotion });
+  },
+  setRoomTheme(roomTheme) {
+    savePref("room", roomTheme);
+    set({ roomTheme });
   },
   setSettingsOpen(settingsOpen) {
     set({ settingsOpen });

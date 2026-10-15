@@ -16,7 +16,7 @@ import { COLOR_HEX } from "@/scene/sceneStore";
 import { SeatFxStack, TimerRing, TURN_SHADOW, TurnPing, useSmallScreen } from "@/scene/zones/SeatChips";
 import { useScene } from "@/scene/sceneStore";
 import { shoutNow } from "@/scene/anim/director";
-import { sortHand, useUi, type Quality } from "./uiStore";
+import { sortHand, useUi, type Quality, type RoomTheme } from "./uiStore";
 import { CARD_HELP, RULE_HELP } from "./ruleInfo";
 
 // ── top bar ──
@@ -166,6 +166,12 @@ function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () 
   );
 }
 
+const ROOM_OPTIONS: { value: RoomTheme; label: string }[] = [
+  { value: "lounge", label: "🛋️ Lounge" },
+  { value: "casino", label: "🎰 Casino" },
+  { value: "living", label: "🏠 Living room" },
+];
+
 export function SettingsSheet() {
   const open = useUi((s) => s.settingsOpen);
   const setOpen = useUi((s) => s.setSettingsOpen);
@@ -173,6 +179,8 @@ export function SettingsSheet() {
   const setQuality = useUi((s) => s.setQuality);
   const reduceMotion = useUi((s) => s.reduceMotion);
   const setReduceMotion = useUi((s) => s.setReduceMotion);
+  const roomTheme = useUi((s) => s.roomTheme);
+  const setRoomTheme = useUi((s) => s.setRoomTheme);
   const [prefs, setPrefs] = useState(audioPrefs.get());
   const router = useRouter();
   const isHost = useGame((s) => !!s.you && s.pub?.hostId === s.you);
@@ -191,6 +199,16 @@ export function SettingsSheet() {
             {(["auto", "high", "medium", "low"] as Quality[]).map((q) => (
               <button key={q} onClick={() => setQuality(q)} className={`flex-1 rounded-lg py-1.5 text-xs font-bold capitalize ${quality === q ? "bg-white text-ink" : "text-white/80"}`}>
                 {q}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-white/70">Room</div>
+          <div className="flex gap-1 rounded-xl bg-[#133f99]/60 p-1">
+            {ROOM_OPTIONS.map((r) => (
+              <button key={r.value} onClick={() => setRoomTheme(r.value)} className={`flex-1 rounded-lg py-1.5 text-xs font-bold ${roomTheme === r.value ? "bg-white text-ink" : "text-white/80"}`}>
+                {r.label}
               </button>
             ))}
           </div>

@@ -93,7 +93,7 @@ function LobbyView() {
   return (
     <main className="relative min-h-dvh">
       {/* dims the table a little behind the lobby panels (no blur: see globals.css .glass) */}
-      <div className="pointer-events-none fixed inset-0 bg-[#5a0710]/30" />
+      <div className="pointer-events-none fixed inset-0 bg-[#3a0a14]/20" />
       <div className="fixed left-[max(1rem,env(safe-area-inset-left))] top-4 z-20 flex items-center gap-2 short:top-2">
         <Link href="/" className="font-display toon-text text-xl font-black tracking-wider text-[#ffd84a] short:text-lg">
           {BRAND.name}
