@@ -9,7 +9,7 @@ import { playCard } from "@/client/actions";
 import { useGame } from "@/client/store/game-store";
 import { useUi, sortHand } from "@/ui/uiStore";
 import { playSfx } from "@/audio/sound";
-import { CARD_H, CARD_W, cardGeometry, cardMaterials } from "./cardGeometry";
+import { cardFaceGeometry, cardGeometry, cardMaterials } from "./cardGeometry";
 import { glowTexture } from "./glow";
 import { discardSlot, flatFaceDown, flatFaceUp, handSlot, PILE_SCALE, SEAT_CARD_SCALE, seatHandCenter, standingBack, type HandSlot } from "../layout/layout";
 import { actorTransforms, sceneRef, spawnHints, wildColors } from "../sceneStore";
@@ -38,6 +38,8 @@ const camUp = new THREE.Vector3();
 const slot: HandSlot = { pos: new THREE.Vector3(), rotZ: 0, scale: 1 };
 /** warm highlight behind playable cards (normal blending: additive washes out on the bright table) */
 const HALO = "#fff1a6";
+/** soft shadow each hand card casts on the one beneath it, so the fan has depth */
+const DROP_SHADOW = "#2a0610";
 
 function CardActor({ card, zone, index, count, playable, selected, rejected, myTurn, tint }: ActorProps) {
   const group = useRef<THREE.Group>(null);
@@ -164,7 +166,7 @@ function CardActor({ card, zone, index, count, playable, selected, rejected, myT
       halo.current.visible = m.opacity > 0.01;
       // dim cards you can't play while it's your turn
       const sm = shade.current.material as THREE.MeshBasicMaterial;
-      sm.opacity = THREE.MathUtils.damp(sm.opacity, zone === "hand" && myTurn && !playable ? 0.36 : 0, 8, dt);
+      sm.opacity = THREE.MathUtils.damp(sm.opacity, zone === "hand" && myTurn && !playable ? 0.2 : 0, 8, dt);
       shade.current.visible = sm.opacity > 0.01;
     }
   });
@@ -208,8 +210,12 @@ function CardActor({ card, zone, index, count, playable, selected, rejected, myT
             <planeGeometry args={[0.98, 1.3]} />
             <meshBasicMaterial map={glowTexture()} color={HALO} transparent opacity={0} depthWrite={false} />
           </mesh>
-          <mesh ref={shade} position={[0, 0, 0.0085]}>
-            <planeGeometry args={[CARD_W * 0.995, CARD_H * 0.995]} />
+          {/* between this card and the one under it (HAND_Z_STEP apart), offset down-right */}
+          <mesh position={[0.04, -0.05, -0.011]}>
+            <planeGeometry args={[0.9, 1.2]} />
+            <meshBasicMaterial map={glowTexture()} color={DROP_SHADOW} transparent opacity={0.34} depthWrite={false} />
+          </mesh>
+          <mesh ref={shade} geometry={cardFaceGeometry()} position={[0, 0, 0.0085]}>
             <meshBasicMaterial color="#2a1030" transparent opacity={0} depthWrite={false} />
           </mesh>
         </>

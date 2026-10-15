@@ -84,7 +84,7 @@ body {
 
   /* the warm vignette over the 3D stage (static, cheap) */
   .stage-vignette {
-    background: radial-gradient(ellipse 75% 70% at 50% 45%, transparent 55%, rgba(70, 0, 8, 0.38) 100%);
+    background: radial-gradient(ellipse 78% 72% at 50% 45%, transparent 60%, rgba(40, 8, 14, 0.2) 100%);
   }
 
   /* cartoon lettering: ink outline plus a drop shadow */

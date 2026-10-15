@@ -19,11 +19,11 @@ const BORDER = 24;
 const INK = "#14213d";
 
 const SHADES: Record<Color | "wild", [string, string, string]> = {
-  red: ["#ff6a63", "#f0303a", "#cc1626"],
-  yellow: ["#ffe46b", "#ffcf1a", "#f0a500"],
-  green: ["#6fdc7d", "#2fb84c", "#1c8f37"],
-  blue: ["#5aa2ff", "#1f74e8", "#1556bf"],
-  wild: ["#b48aff", "#8a3ffc", "#6424d6"],
+  red: ["#ff736b", "#f5333f", "#de1f2e"],
+  yellow: ["#ffe970", "#ffd21f", "#f7b40a"],
+  green: ["#74e683", "#30c254", "#22a244"],
+  blue: ["#64aaff", "#2479ef", "#1b62d6"],
+  wild: ["#bd95ff", "#9047ff", "#7231e8"],
 };
 
 /** Pale tint of each color for the lens. */
@@ -306,33 +306,41 @@ function cornerMark(card: Pick<Card, "kind" | "value" | "color">) {
   return (ctx: Ctx2D) => {
     if (card.kind === "number" || CORNER_TEXT[card.kind]) {
       const t = card.kind === "number" ? String(card.value) : CORNER_TEXT[card.kind]!;
-      ctx.font = font(t.length > 2 ? 44 : t.length > 1 ? 54 : 70);
+      ctx.font = font(t.length > 2 ? 50 : t.length > 1 ? 62 : 82);
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(t, 0, 0);
-      if (card.kind === "number" && (card.value === 6 || card.value === 9)) ctx.fillRect(-14, 34, 28, 6);
+      if (card.kind === "number" && (card.value === 6 || card.value === 9)) ctx.fillRect(-16, 40, 32, 7);
     } else if (card.kind === "wild_roulette") {
-      wheel(ctx, 26);
+      wheel(ctx, 30);
     } else {
-      drawGlyph(ctx, card, 56);
+      drawGlyph(ctx, card, 66);
     }
     // color-blind helper shape under the index
-    if (card.color) shape(ctx, SHAPES[card.color], 0, 60, 20);
+    if (card.color) shape(ctx, SHAPES[card.color], 0, 72, 26);
   };
 }
 
-/** White card stock with the bright body inset by the border. */
+/** White card stock with the bright body inset by the border, edged like a printed card. */
 function cardBody(ctx: Ctx2D, top: string, mid: string, bottom: string) {
   roundRect(ctx, 0, 0, W, H, R);
-  ctx.fillStyle = "#fffdf8";
+  ctx.fillStyle = "#ffffff";
   ctx.fill();
   roundRect(ctx, BORDER, BORDER, W - BORDER * 2, H - BORDER * 2, R - 14);
   const g = ctx.createLinearGradient(0, 0, W, H);
   g.addColorStop(0, top);
-  g.addColorStop(0.5, mid);
+  g.addColorStop(0.45, mid);
   g.addColorStop(1, bottom);
   ctx.fillStyle = g;
   ctx.fill();
+  // a crisp hairline where the body meets the border, and a light keyline just inside it
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(20,33,61,0.28)";
+  ctx.stroke();
+  roundRect(ctx, BORDER + 11, BORDER + 11, W - (BORDER + 11) * 2, H - (BORDER + 11) * 2, R - 22);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.stroke();
 }
 
 function clipBody(ctx: Ctx2D) {
@@ -381,7 +389,7 @@ function paintFace(card: Pick<Card, "kind" | "value" | "color">, tint: Color | n
     wheel(ctx, W * 0.6);
     ctx.restore();
   }
-  ctx.lineWidth = 9;
+  ctx.lineWidth = 11;
   ctx.strokeStyle = "#ffffff";
   ctx.stroke();
   ctx.restore();
@@ -396,16 +404,16 @@ function paintFace(card: Pick<Card, "kind" | "value" | "color">, tint: Color | n
   ctx.restore();
 
   // big glyph in the card color (white on wilds), outlined in ink
-  outlined(ctx, W / 2, H / 2, false, (g) => drawGlyph(g, card, 300), color ? mid : "#ffffff", 9, 12);
+  outlined(ctx, W / 2, H / 2, false, (g) => drawGlyph(g, card, 300), color ? mid : "#ffffff", 10, 12);
 
-  outlined(ctx, 78, 92, false, cornerMark(card), "#ffffff", 5);
-  outlined(ctx, W - 78, H - 92, true, cornerMark(card), "#ffffff", 5);
+  outlined(ctx, 84, 100, false, cornerMark(card), "#ffffff", 6.5);
+  outlined(ctx, W - 84, H - 100, true, cornerMark(card), "#ffffff", 6.5);
   return c;
 }
 
 function paintBack(): HTMLCanvasElement {
   const [c, ctx] = canvas(W, H);
-  cardBody(ctx, "#4b95ff", "#1f64dc", "#1546a8");
+  cardBody(ctx, "#5aa2ff", "#2470ec", "#1a56c8");
 
   ctx.save();
   clipBody(ctx);
@@ -463,7 +471,8 @@ function paintBack(): HTMLCanvasElement {
 function toTexture(c: HTMLCanvasElement): THREE.CanvasTexture {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
+  // three clamps this to what the GPU supports; it keeps cards lying on the table sharp
+  t.anisotropy = 16;
   t.generateMipmaps = true;
   t.minFilter = THREE.LinearMipmapLinearFilter;
   t.needsUpdate = true;
