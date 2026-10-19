@@ -56,51 +56,45 @@ describe("deck", () => {
 });
 
 describe("starting a round", () => {
-  it("deals the hand size to everyone and applies the starting card", () => {
-    const seen = new Set<string>();
+  it("deals the hand size to everyone and always starts on a number card", () => {
     for (let seed = 1; seed < 400; seed++) {
       const s = startedGame({ players: 4, seed });
       const start = s.discardPile[0];
-      seen.add(start.kind);
-      expect(["wild4"]).not.toContain(start.kind);
+      expect(start.kind).toBe("number");
+      expect(s.currentColor).toBe(start.color);
       expect(countCards(s)).toBe(108);
-      const first = (s.dealerIndex + 1) % 4;
-      const firstPlayer = s.players[first];
-      switch (start.kind) {
-        case "draw2":
-          expect(firstPlayer.hand).toHaveLength(9);
-          expect(s.turnIndex).toBe((first + 1) % 4);
-          break;
-        case "skip":
-          expect(s.turnIndex).toBe((first + 1) % 4);
-          break;
-        case "reverse":
-          expect(s.direction).toBe(-1);
-          expect(s.turnIndex).toBe(s.dealerIndex);
-          break;
-        case "wild":
-          expect(s.turn).toEqual({ kind: "choose_color", purpose: "start" });
-          expect(s.turnIndex).toBe(first);
-          break;
-        default:
-          expect(s.turnIndex).toBe(first);
-          expect(s.players.every((p) => p.hand.length === 7)).toBe(true);
-      }
+      expect(s.turnIndex).toBe((s.dealerIndex + 1) % 4);
+      expect(s.direction).toBe(1);
+      expect(s.turn).toEqual({ kind: "play" });
+      expect(s.players.every((p) => p.hand.length === 7)).toBe(true);
     }
-    expect([...seen]).toEqual(expect.arrayContaining(["number", "skip", "reverse", "draw2", "wild"]));
   });
 
-  it("first player picks the color for a starting wild", () => {
-    let seed = 1;
-    let s = startedGame({ players: 3, seed });
-    while (s.discardPile[0].kind !== "wild") s = startedGame({ players: 3, seed: ++seed });
-    const g = new Game(s);
-    const who = g.turnId;
-    expect(() => g.act(who, { type: "draw" })).toThrow(RuleError);
-    g.act(who, { type: "choose_color", color: "green" });
-    expect(g.state.currentColor).toBe("green");
-    expect(g.turnId).toBe(who);
-    expect(g.state.turn.kind).toBe("play");
+  it("never starts on an action or wild card, whatever extras are in the deck", () => {
+    const every = { wildReverse4: true, discardAll: true, skipAll: true, draw4Color: true, wild6: true, wild10: true, roulette: true };
+    for (let seed = 1; seed < 200; seed++) {
+      expect(startedGame({ players: 5, seed, settings: { cards: every } }).discardPile[0].kind).toBe("number");
+    }
+  });
+
+  it("with Discard All on, everyone is dealt at least one", () => {
+    for (let n = 2; n <= 10; n++) {
+      for (let seed = 1; seed < 30; seed++) {
+        const s = startedGame({ players: n, seed, settings: { cards: { discardAll: true } } });
+        for (const p of s.players) {
+          expect(p.hand.some((c) => c.kind === "discard_all")).toBe(true);
+          expect(p.hand).toHaveLength(7);
+        }
+        expect(countCards(s)).toBe(s.totalCards);
+      }
+    }
+  });
+
+  it("hands out as many Discard Alls as the deck has when it's short", () => {
+    const s = startedGame({ players: 10, seed: 3, settings: { deckCount: 1, handSize: 5, cards: { discardAll: true } } });
+    const holders = s.players.filter((p) => p.hand.some((c) => c.kind === "discard_all")).length;
+    expect(holders).toBe(8); // one deck has 8
+    expect(countCards(s)).toBe(s.totalCards);
   });
 });
 
@@ -405,7 +399,10 @@ describe("lobby", () => {
     let s = lobby();
     for (let i = 1; i < 10; i++) s = act(s, { type: "join", name: `G${i}`, avatar: "😎" }, `g${i}`);
     expect(s.players).toHaveLength(10);
-    expect(() => act(s, { type: "join", name: "X", avatar: "😎" }, "x")).toThrow(/full/);
+    // a full table: you watch instead
+    const watching = act(s, { type: "join", name: "X", avatar: "😎" }, "x");
+    expect(watching.players).toHaveLength(10);
+    expect(watching.spectators?.map((w) => w.id)).toEqual(["x"]);
     expect(() => act(s, { type: "add_bot" }, "h")).toThrow(/full/);
   });
 
@@ -420,7 +417,10 @@ describe("lobby", () => {
     expect(() => act(s, { type: "start" }, "g")).toThrow(/host/);
     s = act(s, { type: "start" }, "h");
     expect(s.phase).toBe("playing");
-    expect(() => act(s, { type: "join", name: "Late", avatar: "😎" }, "late")).toThrow(/in progress/);
+    // too late for a seat: you watch instead
+    const late = act(s, { type: "join", name: "Late", avatar: "😎" }, "late");
+    expect(late.players.some((p) => p.id === "late")).toBe(false);
+    expect(late.spectators?.map((w) => w.id)).toEqual(["late"]);
   });
 
   it("bots can be added and removed; host passes on when leaving", () => {

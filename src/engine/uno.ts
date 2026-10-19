@@ -1,6 +1,7 @@
 import { RuleError } from "./errors";
 import { checkMercy } from "./round";
 import { currentPlayer, drawCards, findPlayer } from "./state";
+import { sameTeam } from "./teams";
 import type { Ctx, GameState, PlayerState } from "./types";
 
 /**
@@ -40,6 +41,8 @@ export function catchableTarget(ctx: Pick<Ctx, "state" | "now">, by: PlayerState
   if (age < UNO_CATCH_GRACE_MS || age >= UNO_WINDOW_MS) return null;
   const target = findPlayer(ctx.state, w.playerId);
   if (!target || target.status !== "active" || target.hand.length !== 1 || target.saidUno) return null;
+  // no catching your own partner
+  if (sameTeam(ctx.state, target, by)) return null;
   return target;
 }
 

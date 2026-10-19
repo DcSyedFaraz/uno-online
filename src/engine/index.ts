@@ -7,6 +7,7 @@ export * from "./legal";
 export * from "./state";
 export * from "./view";
 export * from "./uno";
+export * from "./teams";
 export { applyAction, engineDebug, type ApplyResult } from "./reducer";
 export { decideBot, BOT_NAMES, BOT_AVATARS } from "./bots";
 export { cryptoRng, mulberry32 } from "./rng";

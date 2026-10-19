@@ -45,8 +45,26 @@ export interface PlayerState {
   status: PlayerStatus;
   afkStrikes: number;
   autopilot: boolean;
-  /** a human who left mid-game: a bot plays their seat until the game ends (or they rejoin) */
+  /** a human who left or went offline mid-game: a bot plays their seat until the game ends (or they're back) */
   takenOver?: boolean;
+  /** taken over because their connection dropped (their client takes the seat back on reconnect) */
+  offline?: boolean;
+  /** removed by the host mid-game: the bot keeps the seat until the game ends */
+  kicked?: boolean;
+  /** team play: this player's partner (teams are pairs) */
+  partnerId?: string | null;
+}
+
+/** Someone watching a game they couldn't join (it was already running, or the table was full). */
+export interface Spectator {
+  id: string;
+  name: string;
+  avatar: string;
+}
+
+export interface TeamInvite {
+  from: string;
+  to: string;
 }
 
 /** What the current turn is waiting for. */
@@ -56,8 +74,8 @@ export type TurnState =
   | { kind: "drawn"; cardId: string }
   /** a draw penalty is pending: stack it, take it, or (Wild +4 only) challenge it */
   | { kind: "stack"; challenge: ChallengeInfo | null }
-  /** the player must pick a color (starting wild, or Wild Color Roulette) */
-  | { kind: "choose_color"; purpose: "start" | "roulette" };
+  /** the player must name a color (Wild Color Roulette) */
+  | { kind: "choose_color"; purpose: "roulette" };
 
 export interface ChallengeInfo {
   offenderId: string;
@@ -109,6 +127,10 @@ export interface GameState {
   nextCardId: number;
   lastRound: RoundResult | null;
   gameWinnerId: string | null;
+  /** watchers (they see every hand); optional so rooms saved before spectators existed still load */
+  spectators?: Spectator[];
+  /** team play: pending "team up?" invitations (lobby only) */
+  invites?: TeamInvite[];
 }
 
 export type Action =
@@ -122,6 +144,8 @@ export type Action =
   | { type: "call_uno" }
   | { type: "catch_uno"; targetId: string }
   | { type: "timeout" }
+  /** system: a player's connection is gone, so a bot plays for them (or they leave the lobby) */
+  | { type: "offline"; playerId: string }
   // lobby / host
   | { type: "join"; name: string; avatar: string }
   | { type: "update_settings"; settings: unknown }
@@ -133,7 +157,12 @@ export type Action =
   | { type: "transfer_host"; playerId: string }
   | { type: "start" }
   | { type: "next_round" }
-  | { type: "back_to_lobby" };
+  | { type: "back_to_lobby" }
+  // team play (lobby)
+  | { type: "team_invite"; playerId: string }
+  | { type: "team_accept"; playerId: string }
+  | { type: "team_decline"; playerId: string }
+  | { type: "team_leave" };
 
 export type DrawReason = "draw" | "penalty" | "uno" | "challenge" | "roulette" | "deal";
 
@@ -162,6 +191,10 @@ export type GameEvent =
   | { t: "game_over"; winnerId: string | null }
   | { t: "player_joined"; pid: string }
   | { t: "player_left"; pid: string }
+  | { t: "player_offline"; pid: string }
+  | { t: "spectator_joined"; pid: string }
+  | { t: "team_invite"; from: string; to: string }
+  | { t: "team_paired"; a: string; b: string }
   | { t: "host_changed"; pid: string }
   | { t: "room_closed" }
   | { t: "settings" };

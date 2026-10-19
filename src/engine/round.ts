@@ -2,20 +2,9 @@ import { buildDeck } from "./deck";
 import { RuleError } from "./errors";
 import { shuffle } from "./rng";
 import { handPoints } from "./scoring";
-import { activePlayers, drawCards, nextActiveIndex, playerIndex, setTurn } from "./state";
-import type { Card, CardKind, Ctx, GameState, PlayerState } from "./types";
-
-/** Cards that can't be the starting card: they go back into the deck and a new one is flipped. */
-const BAD_START: ReadonlySet<CardKind> = new Set([
-  "wild4",
-  "wild_reverse4",
-  "wild6",
-  "wild10",
-  "wild_roulette",
-  "draw4",
-  "skip_all",
-  "discard_all",
-]);
+import { activePlayers, nextActiveIndex, playerIndex, setTurn } from "./state";
+import { teamKey, teamOf } from "./teams";
+import type { Card, Ctx, GameState, PlayerState } from "./types";
 
 export function startRound(ctx: Ctx) {
   const { state } = ctx;
@@ -52,12 +41,13 @@ export function startRound(ctx: Ctx) {
   for (let i = 0; i < state.settings.handSize; i++) {
     for (const p of state.players) p.hand.push(state.drawPile.pop()!);
   }
+  dealDiscardAll(ctx);
   for (const p of state.players) counts[p.id] = p.hand.length;
   ctx.events.push({ t: "deal", counts });
 
-  // Flip the starting card
+  // Flip the starting card: always a number card (action and wild cards go back in)
   let start: Card = state.drawPile.pop()!;
-  for (let guard = 0; BAD_START.has(start.kind) && guard < 500; guard++) {
+  for (let guard = 0; start.kind !== "number" && guard < 500; guard++) {
     state.drawPile.unshift(start);
     shuffle(state.drawPile, ctx.rng);
     start = state.drawPile.pop()!;
@@ -65,42 +55,40 @@ export function startRound(ctx: Ctx) {
   state.discardPile.push(start);
   state.currentColor = start.color;
   ctx.events.push({ t: "start_card", card: start });
+  setTurn(ctx, nextActiveIndex(state, state.dealerIndex, 1));
+}
 
-  const dealer = state.dealerIndex;
-  const first = nextActiveIndex(state, dealer, 1);
-  switch (start.kind) {
-    case "wild":
-      setTurn(ctx, first, { kind: "choose_color", purpose: "start" });
-      break;
-    case "draw2": {
-      const victim = state.players[first];
-      drawCards(ctx, victim, 2, "penalty");
-      ctx.events.push({ t: "skip", pids: [victim.id] });
-      setTurn(ctx, nextActiveIndex(state, first, 1));
-      break;
-    }
-    case "skip":
-      ctx.events.push({ t: "skip", pids: [state.players[first].id] });
-      setTurn(ctx, nextActiveIndex(state, first, 1));
-      break;
-    case "reverse":
-      state.direction = -1;
-      ctx.events.push({ t: "reverse", direction: -1 });
-      setTurn(ctx, dealer);
-      break;
-    default:
-      setTurn(ctx, first);
+/**
+ * With Discard All on, everyone starts with at least one: a player dealt none swaps a random
+ * card of theirs for one from the draw pile. Goes round from the dealer's left, so if the
+ * deck is short (decks forced down at a big table) it's spread as fairly as possible.
+ */
+function dealDiscardAll(ctx: Ctx) {
+  const { state } = ctx;
+  if (!state.settings.cards.discardAll) return;
+  const n = state.players.length;
+  for (let k = 1; k <= n; k++) {
+    const p = state.players[(state.dealerIndex + k) % n];
+    if (p.hand.some((c) => c.kind === "discard_all")) continue;
+    const spare = state.drawPile.flatMap((c, i) => (c.kind === "discard_all" ? [i] : []));
+    if (spare.length === 0) return;
+    const [card] = state.drawPile.splice(spare[Math.floor(ctx.rng() * spare.length)], 1);
+    const slot = Math.floor(ctx.rng() * p.hand.length);
+    const out = p.hand[slot];
+    p.hand[slot] = card;
+    state.drawPile.splice(Math.floor(ctx.rng() * (state.drawPile.length + 1)), 0, out);
   }
 }
 
-/** Ends the round with `winner` (or nobody) and scores it. */
+/** Ends the round with `winner` (or nobody) and scores it. In team play the winner's partner wins too. */
 export function endRound(ctx: Ctx, winner: PlayerState | null, timeUp = false) {
   const { state } = ctx;
+  const winners = winner ? teamOf(state, winner) : [];
   const hands: Record<string, Card[]> = {};
   let points = 0;
   for (const p of state.players) {
     hands[p.id] = [...p.hand];
-    if (p !== winner) points += handPoints(p.hand);
+    if (!winners.includes(p)) points += handPoints(p.hand);
   }
   state.lastRound = { round: state.round, winnerId: winner?.id ?? null, points, hands, ...(timeUp ? { timeUp } : {}) };
   state.unoWindow = null;
@@ -111,7 +99,8 @@ export function endRound(ctx: Ctx, winner: PlayerState | null, timeUp = false) {
   ctx.events.push({ t: "round_over", winnerId: winner?.id ?? null, points, ...(timeUp ? { timeUp } : {}) });
 
   if (state.settings.winMode === "points" && winner) {
-    winner.score += points;
+    // partners share one score
+    for (const p of winners) p.score += points;
     if (winner.score < state.settings.targetPoints) {
       state.phase = "round_over";
       return;
@@ -128,25 +117,29 @@ export function timeUp(state: GameState, now: number): boolean {
 }
 
 /**
- * The round clock ran out: the active player holding the fewest card points wins.
- * Ties go to fewer cards, then to whoever plays soonest (starting with the current player).
+ * The round clock ran out: the team (or, without teams, the player) holding the fewest card
+ * points wins. Ties go to fewer cards, then to whoever plays soonest (from the current player).
  */
 export function endRoundOnTime(ctx: Ctx) {
   const { state } = ctx;
   const n = state.players.length;
-  let winner: PlayerState | null = null;
+  const teams = new Map<string, { points: number; cards: number; order: number; best: PlayerState }>();
   for (let i = 0; i < n; i++) {
     const p = state.players[(((state.turnIndex + i * state.direction) % n) + n) % n];
     if (p.status !== "active") continue;
-    if (!winner) {
-      winner = p;
-      continue;
-    }
-    const diff = handPoints(p.hand) - handPoints(winner.hand);
-    if (diff < 0 || (diff === 0 && p.hand.length < winner.hand.length)) winner = p;
+    const key = teamKey(state, p);
+    const t = teams.get(key) ?? { points: 0, cards: 0, order: i, best: p };
+    t.points += handPoints(p.hand);
+    t.cards += p.hand.length;
+    if (handPoints(p.hand) < handPoints(t.best.hand)) t.best = p;
+    teams.set(key, t);
+  }
+  let win: { points: number; cards: number; order: number; best: PlayerState } | null = null;
+  for (const t of teams.values()) {
+    if (!win || t.points < win.points || (t.points === win.points && (t.cards < win.cards || (t.cards === win.cards && t.order < win.order)))) win = t;
   }
   ctx.events.push({ t: "time_up" });
-  endRound(ctx, winner, true);
+  endRound(ctx, win?.best ?? null, true);
 }
 
 /** Removes a player from the round; their cards go to the bottom of the draw pile. */
@@ -181,7 +174,8 @@ export function settle(ctx: Ctx): boolean {
   const { state } = ctx;
   if (state.phase !== "playing") return true;
   const active = activePlayers(state);
-  if (active.length <= 1) {
+  // over when one player (or, in team play, one team) is left standing
+  if (active.length <= 1 || new Set(active.map((p) => teamKey(state, p))).size <= 1) {
     endRound(ctx, active[0] ?? null);
     return true;
   }

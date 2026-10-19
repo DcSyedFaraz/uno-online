@@ -4,6 +4,7 @@ import { applyAction, engineDebug } from "../reducer";
 import { CLASSIC_SETTINGS, mergeSettings, type RuleSettings } from "../rules";
 import { mulberry32, pick } from "../rng";
 import { countCards, createGame, dueAt, newPlayer } from "../state";
+import { teamKey } from "../teams";
 import { privateView } from "../view";
 import type { GameState } from "../types";
 
@@ -34,6 +35,7 @@ function randomSettings(r: () => number, mode: number): RuleSettings {
     s.targetPoints = 150;
   }
   if (r() < 0.3) s.roundTimerMin = pick([3, 5, 7] as const, r);
+  if (r() < 0.25) s.teamPlay = true;
   if (mode === 1) pick(SWITCHES, r)(s, r);
   if (mode === 2) for (const sw of SWITCHES) if (r() < 0.5) sw(s, r);
   return mergeSettings(CLASSIC_SETTINGS, s);
@@ -50,6 +52,8 @@ function checkInvariants(s: GameState) {
     expect(s.discardPile.length).toBeGreaterThan(0);
     expect(s.deadline).not.toBeNull();
     expect(dueAt(s)).not.toBeNull();
+    // the round is only on while at least two teams (or players) are still in it
+    expect(new Set(s.players.filter((p) => p.status === "active").map((p) => teamKey(s, p))).size).toBeGreaterThanOrEqual(2);
     // nobody is ever left facing a stack they can't answer: that one is drawn automatically
     if (s.turn.kind === "stack") {
       const p = s.players[s.turnIndex];
@@ -62,8 +66,11 @@ function checkInvariants(s: GameState) {
 function simulate(seed: number) {
   const r = mulberry32(seed);
   const mode = seed % 3;
-  const n = 2 + Math.floor(r() * 9);
-  let state = createGame({ id: "p0", name: "P0", avatar: "🤖" }, randomSettings(r, mode));
+  let n = 2 + Math.floor(r() * 9);
+  const settings = randomSettings(r, mode);
+  // team play needs pairs: 4, 6, 8 or 10 players (bots are paired at start)
+  if (settings.teamPlay) n = Math.max(4, n - (n % 2));
+  let state = createGame({ id: "p0", name: "P0", avatar: "🤖" }, settings);
   for (let i = 1; i < n; i++) state.players.push(newPlayer({ id: `p${i}`, name: `P${i}`, avatar: "🤖" }, true));
   state.players[0].isBot = true;
   let now = 1_000;
