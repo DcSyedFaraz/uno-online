@@ -117,6 +117,22 @@ export function cardFaceGeometry(): THREE.ShapeGeometry {
   return (faceShape ??= new THREE.ShapeGeometry(roundedShape(CARD_W, CARD_H, RADIUS), CORNER_SEGMENTS));
 }
 
+const heldFaces: Partial<Record<1 | -1, THREE.ShapeGeometry>> = {};
+/**
+ * A card's face as a flat shape just off one side of a card body (`side` +1 = its front, -1 =
+ * its back, reading correctly from that side). Laid over an opponent's held card, it shows the
+ * face to the table without drawing another full card.
+ */
+export function heldFaceGeometry(side: 1 | -1): THREE.ShapeGeometry {
+  let g = heldFaces[side];
+  if (g) return g;
+  g = new THREE.ShapeGeometry(roundedShape(CARD_W, CARD_H, RADIUS), CORNER_SEGMENTS);
+  remapUv(g, false);
+  if (side < 0) g.rotateY(Math.PI);
+  g.translate(0, 0, side * (CARD_T / 2 + 0.003));
+  return (heldFaces[side] = g);
+}
+
 let border: THREE.ShapeGeometry | null = null;
 /** A thin ring hugging the card's edge (the running border on playable cards). */
 export function cardBorderGeometry(): THREE.ShapeGeometry {

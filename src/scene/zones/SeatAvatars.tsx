@@ -229,8 +229,14 @@ function Avatar({ p, pub, small }: { p: PublicPlayer; pub: PublicView; small: bo
     live.current = state;
   });
   useEffect(() => {
-    canvas.width = W * RES;
-    canvas.height = Math.ceil(L.h * RES);
+    const w = W * RES;
+    const h = Math.ceil(L.h * RES);
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      // three allocates a texture's GPU storage once; a resized canvas would only overwrite part of it
+      tex.dispose();
+    }
     paintChip(ctx, L, { ...live.current, timer: 1, ripple: 0 });
     tex.needsUpdate = true;
   }, [key, canvas, ctx, tex, L]);

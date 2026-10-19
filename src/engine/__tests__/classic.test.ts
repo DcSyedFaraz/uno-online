@@ -90,11 +90,12 @@ describe("starting a round", () => {
     }
   });
 
-  it("hands out as many Discard Alls as the deck has when it's short", () => {
+  it("adds Discard Alls to the round when the deck is short", () => {
     const s = startedGame({ players: 10, seed: 3, settings: { deckCount: 1, handSize: 5, cards: { discardAll: true } } });
-    const holders = s.players.filter((p) => p.hand.some((c) => c.kind === "discard_all")).length;
-    expect(holders).toBe(8); // one deck has 8
+    for (const p of s.players) expect(p.hand.some((c) => c.kind === "discard_all")).toBe(true);
+    expect(s.totalCards).toBe(buildDeck(s.settings, 10, 0).length + 2); // one deck has 8
     expect(countCards(s)).toBe(s.totalCards);
+    expect(new Set([...s.drawPile, ...s.discardPile, ...s.players.flatMap((p) => p.hand)].map((c) => c.id)).size).toBe(s.totalCards);
   });
 });
 

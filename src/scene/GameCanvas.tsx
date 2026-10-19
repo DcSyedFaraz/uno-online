@@ -47,13 +47,14 @@ function FrontFill() {
 function World() {
   const size = useThree((s) => s.size);
   const scene = useThree((s) => s.scene);
-  // dev debug handle: the live three.js scene
+  const gl = useThree((s) => s.gl);
+  // dev debug handle: the live three.js scene and renderer (gl.info for draw calls)
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") {
       const w = window as unknown as { __neono?: object };
-      w.__neono = { ...w.__neono, scene };
+      w.__neono = { ...w.__neono, scene, gl };
     }
-  }, [scene]);
+  }, [scene, gl]);
   const aspect = size.width / Math.max(1, size.height);
   const compact = size.height < 520;
   const d = useMemo(() => tableDims(aspect, compact), [aspect, compact]);

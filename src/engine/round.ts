@@ -4,7 +4,7 @@ import { shuffle } from "./rng";
 import { handPoints } from "./scoring";
 import { activePlayers, nextActiveIndex, playerIndex, setTurn } from "./state";
 import { teamKey, teamOf } from "./teams";
-import type { Card, Ctx, GameState, PlayerState } from "./types";
+import { COLORS, type Card, type Ctx, type GameState, type PlayerState } from "./types";
 
 export function startRound(ctx: Ctx) {
   const { state } = ctx;
@@ -45,12 +45,14 @@ export function startRound(ctx: Ctx) {
   for (const p of state.players) counts[p.id] = p.hand.length;
   ctx.events.push({ t: "deal", counts });
 
-  // Flip the starting card: always a number card (action and wild cards go back in)
+  // Flip the starting card: always a number card. An action or wild card goes back in at
+  // random and the next number card from the top is used instead.
   let start: Card = state.drawPile.pop()!;
-  for (let guard = 0; start.kind !== "number" && guard < 500; guard++) {
-    state.drawPile.unshift(start);
-    shuffle(state.drawPile, ctx.rng);
-    start = state.drawPile.pop()!;
+  if (start.kind !== "number") {
+    state.drawPile.splice(Math.floor(ctx.rng() * (state.drawPile.length + 1)), 0, start);
+    let i = state.drawPile.length - 1;
+    while (state.drawPile[i].kind !== "number") i--;
+    start = state.drawPile.splice(i, 1)[0];
   }
   state.discardPile.push(start);
   state.currentColor = start.color;
@@ -60,8 +62,8 @@ export function startRound(ctx: Ctx) {
 
 /**
  * With Discard All on, everyone starts with at least one: a player dealt none swaps a random
- * card of theirs for one from the draw pile. Goes round from the dealer's left, so if the
- * deck is short (decks forced down at a big table) it's spread as fairly as possible.
+ * card of theirs for one from the draw pile. If the deck has run out of them (decks forced
+ * down at a big table) a new one is added to the round, so nobody goes without.
  */
 function dealDiscardAll(ctx: Ctx) {
   const { state } = ctx;
@@ -71,8 +73,12 @@ function dealDiscardAll(ctx: Ctx) {
     const p = state.players[(state.dealerIndex + k) % n];
     if (p.hand.some((c) => c.kind === "discard_all")) continue;
     const spare = state.drawPile.flatMap((c, i) => (c.kind === "discard_all" ? [i] : []));
-    if (spare.length === 0) return;
-    const [card] = state.drawPile.splice(spare[Math.floor(ctx.rng() * spare.length)], 1);
+    let card: Card;
+    if (spare.length > 0) [card] = state.drawPile.splice(spare[Math.floor(ctx.rng() * spare.length)], 1);
+    else {
+      card = { id: `c${state.nextCardId++}`, kind: "discard_all", color: COLORS[Math.floor(ctx.rng() * COLORS.length)] };
+      state.totalCards += 1;
+    }
     const slot = Math.floor(ctx.rng() * p.hand.length);
     const out = p.hand[slot];
     p.hand[slot] = card;

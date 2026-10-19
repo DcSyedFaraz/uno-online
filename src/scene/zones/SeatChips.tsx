@@ -4,14 +4,14 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import type { Card, PublicPlayer } from "@/engine";
+import type { PublicPlayer } from "@/engine";
 import { UNO_CATCH_GRACE_MS, UNO_WINDOW_MS } from "@/engine/uno";
 import { BOT_DELAY_MIN, BOT_DELAY_SPREAD } from "@/engine/state";
 import { NEON } from "@/brand";
 import { sendAction } from "@/client/actions";
 import { serverNow } from "@/client/clock";
 import { useGame } from "@/client/store/game-store";
-import { COLOR_HEX, pileScreen, sceneRef, seatScreen, useScene, type FxTone } from "../sceneStore";
+import { pileScreen, sceneRef, seatScreen, useScene, type FxTone } from "../sceneStore";
 import { AVATAR_LIFT, chipLayout } from "./SeatAvatars";
 
 const isSmall = () => window.innerWidth < 640 || window.innerHeight < 520;
@@ -138,57 +138,12 @@ function CatchButton({ pid }: { pid: string }) {
   );
 }
 
-const MINI: Partial<Record<Card["kind"], string>> = {
-  skip: "⊘",
-  reverse: "⇄",
-  draw2: "+2",
-  draw4: "+4",
-  wild4: "+4",
-  wild: "W",
-  wild6: "+6",
-  wild10: "+10",
-  skip_all: "⊘⊘",
-  discard_all: "≡",
-  wild_reverse4: "⇄4",
-  wild_roulette: "?",
-};
-
-/** Face-up mini cards: a teammate's hand, or every hand for a spectator. */
-export function PeekStrip({ cards, small }: { cards: Card[]; small: boolean }) {
-  const shown = cards.slice(0, small ? 7 : 10);
-  const w = small ? 12 : 15;
-  return (
-    <div className="flex items-end rounded-md bg-[#14213d]/55 px-1 py-0.5">
-      {shown.map((c, i) => (
-        <span
-          key={c.id}
-          className="grid place-items-center rounded-[3px] font-display font-black leading-none text-white ring-1 ring-white"
-          style={{
-            width: w,
-            height: w * 1.45,
-            marginLeft: i ? -w * 0.28 : 0,
-            fontSize: w * (String(c.value ?? MINI[c.kind] ?? "").length > 2 ? 0.42 : 0.6),
-            background: c.color ? COLOR_HEX[c.color] : WILD_BG,
-            textShadow: "0 1px 0 rgba(20,33,61,0.6)",
-          }}
-        >
-          {c.kind === "number" ? c.value : MINI[c.kind]}
-        </span>
-      ))}
-      {cards.length > shown.length && <span className="ml-1 text-[10px] font-black text-white">+{cards.length - shown.length}</span>}
-    </div>
-  );
-}
-
-const WILD_BG = `conic-gradient(${COLOR_HEX.red} 0 25%, ${COLOR_HEX.yellow} 0 50%, ${COLOR_HEX.green} 0 75%, ${COLOR_HEX.blue} 0)`;
-
 /**
  * The DOM layer over an opponent's 3D avatar (see SeatAvatars): things that must stay on top
  * and clickable. Positioned on the avatar circle's centre every frame by <SeatProjector/>.
  */
 function Chip({ p }: { p: PublicPlayer }) {
   const pub = useGame((s) => s.pub!);
-  const peek = useGame((s) => s.priv?.peek?.[p.id]);
   const isTurn = pub.turnPlayerId === p.id && pub.phase === "playing";
   const small = useSmallScreen();
   const crowded = small && pub.players.length >= 8;
@@ -205,10 +160,9 @@ function Chip({ p }: { p: PublicPlayer }) {
       style={{ transform: "translate3d(-9999px,-9999px,0)" }}
     >
       <div className="pointer-events-none relative select-none">
-        {/* above the avatar's name pill: a teammate's / everyone's cards, then the turn arrow */}
-        <div className="absolute left-0 flex -translate-x-1/2 flex-col items-center gap-0.5" style={{ bottom: top - 2 }}>
+        {/* above the avatar's name pill */}
+        <div className="absolute left-0 flex -translate-x-1/2 flex-col items-center" style={{ bottom: top - 2 }}>
           {isTurn && <TurnArrow />}
-          {peek && peek.length > 0 && <PeekStrip cards={peek} small={small} />}
         </div>
         <div className="absolute left-0" style={{ top: -top }}>
           <SeatFxStack pid={p.id} />

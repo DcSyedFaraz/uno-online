@@ -170,8 +170,7 @@ export function seatHandCenter(seat: Seat, out = new THREE.Vector3()) {
 }
 
 /** Card `i` of `n` in a seat's held fan: spread along the table edge, outer cards tilted and lower. */
-export function seatCardSlot(seat: Seat, i: number, n: number, outPos: THREE.Vector3, outQuat: THREE.Quaternion) {
-  const spread = Math.min(0.2, 1.7 / Math.max(1, n));
+export function seatCardSlot(seat: Seat, i: number, n: number, outPos: THREE.Vector3, outQuat: THREE.Quaternion, spread = Math.min(0.2, 1.7 / Math.max(1, n))) {
   const off = (i - (n - 1) / 2) * spread;
   seatHandCenter(seat, outPos);
   // along the edge tangent (the card's own x axis), then a hair outward per card so neighbours never z-fight
@@ -181,6 +180,39 @@ export function seatCardSlot(seat: Seat, i: number, n: number, outPos: THREE.Vec
   outPos.addScaledVector(tmpN, i * 0.012);
   outPos.y -= off * off * 0.35;
   standingBack(seat.yaw, -off * 0.55, outQuat);
+}
+
+const tmpC = new THREE.Vector3();
+const tmpD = new THREE.Vector3();
+const tmpM = new THREE.Vector3();
+const qc = new THREE.Quaternion();
+
+/** Face-up hands are drawn a little bigger than face-down ones so their values read. */
+export const SEAT_FACE_SCALE = SEAT_CARD_SCALE * 1.18;
+
+/**
+ * Like seatCardSlot, for a hand shown face-up (a teammate's, or any hand for a spectator):
+ * bigger and spread wider (but no wider than `maxWidth`, so neighbouring fans stay apart), and
+ * each card sits a fixed step further toward its owner along the card's normal, so cards
+ * overlap like a real hand (every card's top-left index peeks out) even where the fan dips at
+ * its ends.
+ */
+export function seatFaceSlot(seat: Seat, i: number, n: number, outPos: THREE.Vector3, outQuat: THREE.Quaternion, maxWidth = Infinity) {
+  const fit = (maxWidth - CARD_W * SEAT_FACE_SCALE) / Math.max(1, n - 1);
+  seatCardSlot(seat, i, n, outPos, outQuat, Math.min(0.25, 1.9 / Math.max(1, n), Math.max(0.05, fit)));
+  tmpM.set(0, 0, 1).applyQuaternion(outQuat);
+  const depth = tmpD.copy(outPos).sub(seatHandCenter(seat, tmpC)).dot(tmpM);
+  const step = Math.min(0.012, 0.15 / Math.max(1, n - 1));
+  outPos.addScaledVector(tmpM, i * step - depth);
+  // the bigger card still stands on the felt
+  outPos.y += ((CARD_H * (SEAT_FACE_SCALE - SEAT_CARD_SCALE)) / 2) * Math.cos(HAND_LEAN);
+}
+
+/** Which side of a seat's held cards the camera sees: +1 the owner's (face) side, -1 the table side. */
+export function seatSideFacing(seat: Seat, camera: THREE.Vector3): 1 | -1 {
+  standingBack(seat.yaw, 0, qc);
+  tmpM.set(0, 0, 1).applyQuaternion(qc);
+  return tmpD.copy(camera).sub(seatHandCenter(seat, tmpC)).dot(tmpM) > 0 ? 1 : -1;
 }
 
 /** Stable pseudo-random number in [0,1) from a card id (for pile scatter). */
