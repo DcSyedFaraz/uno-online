@@ -23,7 +23,8 @@ NEONO is a 3D, neon-styled online card game modeled on classic UNO, for 2–10 p
 | Shout label | `BRAND.shout = "UNO!"`, which the user asked for. Changeable in one place. |
 | Players | 2–10 per room (`MAX_PLAYERS` in `src/engine/state.ts`). Bots can fill seats. |
 | Identity | **Guest names only, no accounts.** A signed httpOnly cookie (`neono_session`, JWT via `jose`) holds a random `playerId`. Name and avatar are stored in localStorage and sent when you join. |
-| Joining | 6-character room code or share link `/r/CODE`, plus copy link, Web Share and a QR code in the lobby. Joining is allowed in the lobby or between rounds, not mid-round. |
+| Joining | 6-character room code or share link `/r/CODE`, plus copy link, Web Share and a QR code in the lobby. Joining in the lobby or between rounds takes a seat. **Joining mid-round (or a full table) makes you a spectator** (see below). |
+| Deal | **The starting card is always a number card** (anything else is reshuffled and re-flipped). **With Discard All on, every player is dealt at least one** (`dealDiscardAll`; as many as the deck allows when it runs short). Both were user requests. |
 | Rules | **New rooms start from `DEFAULT_SETTINGS`**: classic plus **Equal-or-higher stacking**, the **Discard All** card and a **3-minute round clock** (user request). `CLASSIC_SETTINGS` stays all-off and is what tests build on. The host opens **More rules**, where every extra is its **own switch**. The user explicitly rejected a single "No Mercy" bundle, so there are no presets, only "Reset to classic". |
 | Round clock | Basic setting **Time limit**: Off / 3 / 5 / 7 min (default 3), per round. At time-up the active player with the **fewest card points** wins (ties: fewer cards, then turn order from the current player) and scores as usual. **The last minute plays at 2×**: turn timer halved, bots twice as fast. |
 | Visuals | Full 3D (React Three Fiber) in a **bright "red stage" look modeled on the official UNO! Android app**: red-orange felt with a center burst, gold rim, white-bordered bright cards, blue HUD panels. **No post-processing (no bloom).** Brightness comes from lighting: exposure 1.1, a warm (not red) hemisphere ground and a camera-following `FrontFill` light so cards facing you aren't dull. The table is **one fixed oval on every screen**; only the camera adapts. |
@@ -31,9 +32,15 @@ NEONO is a 3D, neon-styled online card game modeled on classic UNO, for 2–10 p
 | Orientation | **Rooms (lobby and game) are landscape-only on phones and tablets.** Portrait shows a rotate prompt (`RotateGate`) with a "Play fullscreen" button that also locks landscape (Android Chrome; iPhones can't). The home page and join form work in portrait. A web manifest (`display: fullscreen`, `orientation: landscape`) makes home-screen installs open sideways. |
 | Card art | **Original NEONO art, brightened**, not UNO's trade dress: white border, bright body, light tilted lens, ink-outlined glyphs; wilds are purple and **take the picked color once played**; backs are royal blue with a red lens and the NEONO wordmark. |
 | Draw | **Tap the 3D deck** (glowing deck plus a bobbing 3D arrow). There is no Draw button, just a hint pill. Keyboard `D` also draws. |
-| Whose turn | A gold spotlight on the felt glides to the active player; their chip grows, gets a gold ring, a ripple, a bouncing ▼ and a gold name pill. On your turn the screen gets a gold frame and the turn pill turns gold. |
-| Action cards | Every action/wild move shows a **center callout** ("SKIP! Kilo loses a turn", "WILD +4! Comet picked RED · Volt must stack or take +4 (or challenge)") from `describeMove()`, plus seat badges over the affected player. |
+| Whose turn | A **baton** (gold comet) runs along the rim from the previous player to the next, then a gold spotlight on the felt glides to them; their avatar grows, glows gold, ripples and gets a bouncing ▼. On **your** turn: a "YOUR TURN!" swoosh, a breathing gold frame, a haptic buzz, and your playable cards hop up and stay lifted with a **running glowing border**. One turn before yours, an **UP NEXT** pill and chime. |
+| Action cards | A big **badge over the pile** (⊘ spins and stamps, ⇄ spins the new way, +N, a colour wheel that settles on the picked colour) that then flies to whoever it hits (`PileFx`). Every action/wild move also shows a **center callout** ("SKIP! Kilo loses a turn", "WILD +4! Comet picked RED · Volt must stack or take +4 (or challenge)") from `describeMove()`, plus seat badges over the affected player. |
 | Shout / catch | A permanent UNO! button. Pressing it shows a big banner with the player's name to everyone, plus sound and voice. A forgotten shout gives others a **🔨 Catch {name}! +N** button for about 5s, after a 1.2s grace period. |
+| Last card | The scoreboard waits **3.2s** after the round ends so everyone sees the last card land, a "🏆 {name} is OUT!" callout and a gold shockwave. |
+| Avatars | Opponents' avatars are **3D sprites** (`SeatAvatars`): fixed screen size but depth-tested, so the player across the table sits **behind** their standing cards. Name pill above the circle. Only overlays that must stay on top (▼, seat badges, Catch, peek strip) are DOM. |
+| Offline | A player who drops off presence for ~3s is **replaced by a bot instantly** (`offline` action, toast for everyone); coming back reclaims the seat. In the lobby they're removed. A fresh Start / Play again drops their seat. Kicked mid-game players can't reclaim. |
+| Spectators | Up to 20 per room. They see **every hand** (peek strips over each seat), get a "👁 Spectating" pill, can chat, and get **Take a seat** on the scoreboard when a seat is free. They can't play, emote or throw. |
+| Teams | Basic setting **Teams: Off / 2v2 pairs** (up to 5 teams). In the lobby players **invite** each other; an invitee sees all invites in one strip and accepts one (accepting clears the rest; inviting a bot pairs at once). **Unpaired players are auto-paired at Start; an odd count (or under 4) blocks Start.** Partners sit opposite, see each other's cards, can't catch each other, and both win and score when either goes out. Team colours tint avatars, lobby cards and scoreboard rows. |
+| Emotes / throws | A 😊 button (next to chat) opens 12 **animated Noto emoji** (self-hosted WebP, CC BY 4.0, credit in the README and the picker) that pop up over the sender. **Tap an opponent's avatar** for a ring of 6 throwables (egg, tomato, rose, kiss, cheers, bomb) that arc across and splat with a sound. Both ride the chat channel. |
 | Hosting | Free: Vercel Hobby, Neon Free (Singapore), Ably Free. |
 
 User feedback that shaped the build, in order:
@@ -61,6 +68,7 @@ User feedback that shaped the build, in order:
 22. Rings should go behind the pile. Floor effects now sit just above the felt and draw first.
 23. Wanted stacking (equal or higher) and Discard All on by default, +2/+4 drawn automatically when you can't stack or challenge, and a 3/5/7-minute round clock where the fewest card points wins and the last minute runs at 2×. Done (`DEFAULT_SETTINGS`, `takePenalty`, `roundEndsAt`).
 24. Too dull, table felt empty, cards looked low quality. Brighter lighting and palette, themed rooms with chairs, sharper cards (higher DPR caps, bolder corner indices, darker card edge, hand drop shadows). See §8.
+25. One batch: the scoreboard hid the last card (delayed); action cards and turn changes needed official-UNO-style animation (pile badges, baton); "my turn" was easy to miss (lift, running border, banner, up next); offline players should become bots instantly and be dropped on restart; late joiners become spectators who see every hand; the opposite player's avatar was drawn over their cards (3D sprites); animated emotes; throwing things at avatars; 2v2 teams up to 5 teams with invites; number-only start card; a Discard All for everyone.
 
 ---
 
@@ -143,11 +151,14 @@ The entry point is `applyAction(prev, action, actorId, now, rng) → { state, ev
   - `play`
   - `drawn{cardId}` (you may play the drawn card or pass)
   - `stack{challenge|null}` (a draw penalty is pending: stack it, take it, or challenge a fresh Wild +4). **Only exists when the player can answer**: if they hold nothing stackable and there's no challenge, `drawEffect` calls `takePenalty` straight away.
-  - `choose_color{purpose: start|roulette}`
-- `PlayerState`: `status` is `active | out | left`, plus `saidUno`, `afkStrikes`, `autopilot` and `isBot`. Players who leave mid-round stay in the array as `left` until the next round, so seat indices stay stable.
+  - `choose_color{purpose: roulette}` (the start card is never a wild any more)
+- `PlayerState`: `status` is `active | out | left`, plus `saidUno`, `afkStrikes`, `autopilot`, `isBot`, `takenOver` (a bot is playing a human's seat), `offline` (taken over because they dropped off), `kicked` (taken over by a kick: no reclaim) and `partnerId` (team play). Players who leave mid-round stay in the array as `left` until the next round, so seat indices stay stable.
+- `GameState` also has `spectators?: {id,name,avatar}[]` and `invites?: {from,to}[]`; both are optional so old saved rooms load (read with `?? []`).
 - **Actions:**
   - In-game: `play`, `jump_in`, `draw`, `pass`, `take_penalty`, `challenge`, `choose_color`, `call_uno`, `catch_uno`, `timeout`
-  - Lobby/host: `join`, `update_settings`, `add_bot`, `remove_bot`, `kick`, `leave`, `transfer_host`, `start`, `next_round`, `back_to_lobby`
+  - System: `offline {playerId}` (sent by the server after a presence check, like `timeout`)
+  - Lobby/host: `join`, `update_settings`, `add_bot`, `remove_bot`, `kick`, `leave`, `transfer_host`, `start`, `next_round`, `back_to_lobby`, `close_room`
+  - Teams (lobby / game over, team play on): `team_invite {playerId}`, `team_accept {playerId}`, `team_decline {playerId}`, `team_leave`
 
 ### Files
 
@@ -158,7 +169,8 @@ The entry point is `applyAction(prev, action, actorId, now, rng) → { state, ev
 | `cards.ts` | `isWild`, `drawValue` (+2/+4/+6/+10), `matches`, `identical` (for jump-in), `cardPoints`, `faceKey`, `cardLabel` |
 | `legal.ts` | `playBlocker` / `jumpInBlocker` (return a human-readable reason or null), `canStack`, `needsColor`, `needsSwapTarget`, playable-card lists |
 | `state.ts` | Construction helpers, `nextActiveIndex` (skips non-active players), `drawCards` (reshuffles when needed), `setTurn` / `advanceTurn`, `scheduleDeadline` (bot delay vs. turn timer) |
-| `round.ts` | `startRound` (deal, starting-card rules, dealer rotation), `endRound` (scoring and phase), `eliminate`, `checkMercy`, `settle()` (ends the round if one player is left, and moves the turn if the current player is gone) |
+| `teams.ts` | Team play: `TEAM_COLORS`, `teamColor(view, pid)` (by seat order), `partnerOf`, `teamKey`, `sameTeam`, `teamOf`, `pair`/`unpair`/`clearTeams`, `arrangeTeams` (Start: even count 4–10, auto-pair, seat partners opposite) |
+| `round.ts` | `startRound` (deal, `dealDiscardAll`, number-only start card, dealer rotation), `endRound` (scoring and phase), `eliminate`, `checkMercy`, `settle()` (ends the round if one player is left, and moves the turn if the current player is gone) |
 | `effects/*.ts` | One effect per card kind, each responsible for moving the turn: numbers (7-swap, 0-rotate), skip and skip-all, reverse, draw (all draw cards and stacking), wild and roulette, discard-all |
 | `uno.ts` | Shout and catch: `UNO_CATCH_GRACE_MS = 1200`, `UNO_WINDOW_MS = 6500`, `canCallUno`, `catchableTarget`, `expireUnoWindow` |
 | `bots.ts` | Heuristic bot and autopilot (`decideBot`): saves wilds, uses action cards against a threatening next player, swaps with the smallest hand. Shouts 85% of the time. **Plays a random legal card 15% of the time**, which prevents rare infinite +2 ping-pong loops. |
@@ -168,12 +180,8 @@ The entry point is `applyAction(prev, action, actorId, now, rng) → { state, ev
 ### Classic rules as implemented
 
 - **Matching:** same color, same symbol, or any wild.
-- **Starting card:**
-  - Wild +4 and every extra card are reshuffled back into the deck and a new card is flipped.
-  - Wild: the first player picks the color.
-  - +2: the first player draws 2 and is skipped.
-  - Skip: the first player is skipped.
-  - Reverse: the dealer starts and play goes the other way.
+- **Starting card: always a number card.** Anything else (action, wild, extra) is reshuffled back and a new card is flipped (user request; the old official start-card effects are gone). The player after the dealer starts.
+- **Discard All for everyone:** with `cards.discardAll` on, after the deal each player without one swaps a random card of theirs for a random Discard All from the draw pile (seeded rng, card count unchanged). If the deck is short, as many players as possible get one.
 - **Drawing:** draw 1 (allowed even if you have a playable card). If the drawn card is playable you're in the `drawn` state and may play it or pass. If not, your turn ends. Drawing a penalty ends your turn.
 - **Wild +4 challenge (default mode):** the victim gets a `stack` turn with `challenge` info. If the offender was guilty (held a card of the previous color), they draw 4 and the challenger plays normally. If innocent, the challenger draws 6 and is skipped.
 - **Two players:** Reverse acts as Skip. **Reshuffle:** the discard pile (minus its top card) goes back into the draw pile when it runs out.
@@ -190,7 +198,23 @@ The entry point is `applyAction(prev, action, actorId, now, rng) → { state, ev
 - `cards.*`: wildReverse4, discardAll (also discards the player's other same-color cards; the played card stays on top), skipAll (same player goes again), draw4Color, wild6, wild10, roulette (the victim names a color and flips until it appears).
 - `mercyRule` + `mercyLimit`: a player reaching the limit is `out`, and their cards go under the draw pile.
 - `unoPenalty`; `afkAutopilot` + `afkThreshold` (a bot plays for an idle human until they act again).
+- `teamPlay` (basic): see "Teams" below.
 - `roundTimerMin` (basic): `startRound` sets `roundEndsAt`. `round.timeUp` / `endRoundOnTime` run at the start of every action in `dispatch`: once time is up the round ends (`time_up` event, `lastRound.timeUp`) and in-round moves are dropped, not rejected. `scheduleDeadline` halves deadlines inside `FINAL_STRETCH_MS` (60s). `mergeSettings` fills keys missing from old saved rooms from `CLASSIC_SETTINGS`.
+
+### Offline takeover, reclaim and spectators
+
+- `offline {playerId}` (system): a spectator is removed; in the lobby the player is removed (host passes on); otherwise the seat is **taken over** (`isBot`, `takenOver`, `offline`, reschedule if it's their turn, `player_offline` event, host passes to a human). Bots and unknown ids throw "Nothing to do", which the server reports as not applied.
+- **Reclaim:** any in-round action from a `takenOver` actor gives the seat back first; `join` as the same id does too. `kicked` seats can't be reclaimed ("The host removed you from this game"). `start` / `back_to_lobby` drop `takenOver` seats, so a restart excludes offline players.
+- **Spectators:** `join` mid-round, at a full table, or during a team game's `round_over` adds you to `spectators` (cap 20, `spectator_joined`). A spectator's `join` when a seat is allowed moves them into `players` ("Take a seat"). Spectators may only `leave`.
+- `privateView` for a spectator: `spectator: true`, no hand, and `peek` with every active hand. `eventsFor(events, pid, revealAll)` leaves draws unredacted for them.
+
+### Teams
+
+- Partners are a `partnerId` pair. Invites live in `state.invites`; accepting pairs both and clears every invite involving either; inviting a bot, or someone who already invited you, pairs at once. Leaving, kicking, removing a bot or turning team play off unpairs.
+- `start` runs `arrangeTeams`: needs an even count 4–10 ("Team play needs an even number of players…"), shuffles and pairs the unpaired, then seats `[T0a, T1a, …, T0b, T1b, …]` so partners sit opposite.
+- Winning: going out wins for your team. `endRound` scores the other teams' hands and **both partners get the points**. `settle` ends the round when one team is left. Time-up compares team hand totals (ties: fewer cards, then turn order).
+- A team player's `peek` holds their partner's hand while playing. `catchableTarget` never targets your partner. Bots don't aim draws/skips/reverses at their partner (−15) and swap with a rival.
+- In a team game, leaving during `round_over` keeps the seat as a takeover (pairs must stay intact) and joiners spectate until the lobby.
 
 ### The shout window (designed for online play)
 
@@ -200,7 +224,7 @@ When a player goes down to 1 card without shouting, `unoWindow = {playerId, open
 
 - Total card count never changes.
 - Card ids are unique.
-- During play, the current player is active, at least 2 players are active, and a deadline exists.
+- During play, the current player is active, at least 2 players are active (at least 2 teams in team play), and a deadline exists.
 - Non-active players have empty hands.
 - Bots never make illegal moves (`engineDebug.strictBots`).
 
@@ -217,7 +241,8 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
 | `POST /api/rooms/[code]/join` | Join or rejoin with a profile |
 | `POST /api/rooms/[code]/action` | Any client action (validated by zod in `server/api.ts`). `join` and `timeout` aren't allowed here. |
 | `POST /api/rooms/[code]/tick` | Resolve a passed deadline (bots and AFK) |
-| `GET /api/ably/token?code=` | Ably TokenRequest, members only, with a scoped capability (1h TTL) |
+| `POST /api/rooms/[code]/offline` | `{pid}`: a member reports a player missing from presence. The server re-checks presence (`presentIds`) and only then applies `offline`. Returns `{applied}`. |
+| `GET /api/ably/token?code=` | Ably TokenRequest, members and spectators only, with a scoped capability (1h TTL) |
 | `GET /api/cron/cleanup` | Daily cleanup (Bearer `CRON_SECRET`) |
 | `/api/dev/stream`, `/api/dev/chat` | **Dev only**, when no Ably key is set: SSE stream and chat |
 | `POST /api/dev/rig` | **Dev only**: `{code, pid, keep, keepIds?}` trims a hand, to test shout and catch states. 404 in production or when Ably is configured. |
@@ -227,9 +252,9 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
   - **The `rooms` table is created on first use** (`CREATE TABLE IF NOT EXISTS`, once per instance), so deploys need no migration step.
   - The `drizzle/` SQL is kept as a reference only; keep it and `CREATE_ROOMS` in sync if the schema changes.
   - The memory store (dev) lives on `globalThis.__neonoRooms`.
-- `room-service.ts`: `createRoom`, `loadRoom`, `snapshot`, `perform` (load → apply → optimistic save with up to 4 retries → broadcast), `tick`, `rigRoom` (dev), `cleanupInactive`. Room codes use the alphabet `ABCDEFGHJKMNPQRSTUVWXYZ23456789`. `HttpError` carries the HTTP status.
+- `room-service.ts`: `createRoom`, `loadRoom`, `snapshot` (adds `spectator`), `perform` (load → apply → optimistic save with up to 4 retries → broadcast), `tick`, `markOffline` (403 for non-members; `applied:false` when the target is present or the action is a no-op; presence function injectable for tests), `rigRoom` (dev), `cleanupInactive`. `broadcast` sends to humans **and taken-over seats** (so a returning player is current) plus spectators; `messageFor` treats spectators as members. Room codes use the alphabet `ABCDEFGHJKMNPQRSTUVWXYZ23456789`. `HttpError` carries the HTTP status.
 - `session.ts`: `ensurePlayerId` / `getPlayerId`. In dev, `x-dev-user` header or `?devUser=` query → `dev_<name>`, which gives each browser tab its own identity.
-- `realtime.ts`: `publishAll` (Ably `batchPublish` in chunks of 100, or the dev bus), `createAblyToken`, the dev bus and presence (`globalThis.__neonoBus`).
+- `realtime.ts`: `publishAll` (Ably `batchPublish` in chunks of 100, or the dev bus), `createAblyToken`, `presentIds(code)` (Ably REST `presence.get()` on the chat channel, or the dev bus map), the dev bus and presence (`globalThis.__neonoBus`).
 - `api.ts`: zod schemas (`profileSchema`, `clientActionSchema`), the `handle()` error mapper, and `json()` with `no-store`.
 - `server-only` is imported by server modules. Vitest aliases it to `src/test/server-only-stub.ts`.
 
@@ -243,7 +268,11 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
 - **`actions.ts`**:
   - `sendAction` posts the action, applies the response, and toasts any error.
   - `playCard` opens the color or swap picker when the card needs one, sets the pending card (which flies to the pile immediately), and reverts with a shake on rejection.
-- **`realtime/transport.ts`**: `connectRoom` for either Ably (dynamic `import("ably")`, `authUrl` = token route, presence on the chat channel; trust Ably's `clientId` over the payload) or SSE. **`realtime/useRoom.ts`** loads the snapshot, connects, resyncs on every (re)connect, and runs the **ticker**.
+- **Chat kinds** (`src/shared/protocol.ts`): `text`, `reaction`, `system`, `emote`, `throw` (`CHAT_KINDS`), with an optional `to` for throws. `EMOTES` and `THROWABLES` are the allowed ids. The dev chat route validates the same.
+- **`realtime/transport.ts`**: `connectRoom` for either Ably (dynamic `import("ably")`, `authUrl` = token route, presence on the chat channel; trust Ably's `clientId` over the payload) or SSE. **`realtime/useRoom.ts`** loads the snapshot, connects, resyncs on every (re)connect, and runs the **ticker**. It also runs:
+  - **`useOfflineWatch`**: watches presence for human seats. A seat missing for `OFFLINE_GRACE_MS` (3s) × (1 for the tick leader, 2 for other players, 3 for spectators) gets a POST to `/offline`, at most once per 10s per player. Players never seen since this tab loaded get `NEVER_SEEN_GRACE_MS` (20s) instead, so someone still connecting isn't removed. A page refresh fits inside the grace.
+  - **`useReclaim`**: when my seat is `takenOver && offline` and I'm connected, `api.join` (5s debounce) takes it back.
+- The game store has a `spectator` flag (from `priv.spectator`). `takeSeat()` in `actions.ts` joins with the stored profile.
 - `clock.ts` does server clock offset smoothing for countdown rings. `profile.ts` handles profile and preferences in localStorage, always inside try/catch. `api.ts` adds dev headers in development.
 - **`device.ts`**: `IS_TOUCH` (`pointer: coarse`, decided at load), `useNeedsRotate()` (touch + portrait), `canLockLandscape()` / `useCanLockLandscape()`, `enterLandscapeFullscreen()` (must run in a tap; locking only works once fullscreen), `useIsFullscreen()`, `exitFullscreen()`.
 
@@ -266,8 +295,9 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
   - `cameraFov(portrait)`: shared by the camera and the hand layout.
   - Opponents hold their cards **standing up, backs to the table**: `standingBack(yaw, roll)`, `seatHandCenter(seat)`, `seatCardSlot(seat, i, n)` (fanned along the edge, `SEAT_CARD_SCALE = 0.92`). Ghost cards flying to or from a seat use the same pose.
   - Deck and discard positions. **`PILE_SCALE = 1.7`** for both piles.
-  - `computeSeats`: you sit at the bottom, and opponents run clockwise from your left, over the far side, to your right. They're **evenly spaced by on-screen arc length**, with z squashed for perspective.
+  - `computeSeats`: you sit at the bottom, and opponents run clockwise from your left, over the far side, to your right. A spectator (not in `players`) gets every player as an opponent and an empty bottom. They're **evenly spaced by on-screen arc length**, with z squashed for perspective.
   - `discardSlot`: older cards lie scattered; the **top card is propped up** and tilted toward the camera, lifted so its near edge clears the felt.
+  - `PLAYABLE_LIFT = 0.17`: how far playable cards rise on your turn (`handTopPx` budgets for it).
   - `handSlot`: a camera-space fan sized by screen height (23.5% of the height; **30% when compact**, max width 0.62 of the screen so the corners stay free for your badge and the UNO! button). `HAND_Z_STEP = 0.02` keeps halos and overlays from bleeding into neighboring cards. `handTopPx()` feeds `--hand-top`.
   - Discard pile: a tidy stack (small turns and offsets); the propped top card tilts 0.38 rad when compact.
 - **`cards/`**:
@@ -278,22 +308,26 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
     - Each actor eases toward its zone's target every frame (`maath` damping).
     - Adds an arc and a roll while travelling.
     - Reads its entry point from `spawnHints` and writes `actorTransforms`.
-    - Hand cards have pointer select, play by tapping again or dragging up, a warm halo when playable (normal blending), and a dark shade when they can't be played on your turn.
+    - Hand cards have pointer select, play by tapping again or dragging up, and a dark shade when they can't be played on your turn. Playable cards on your turn lift by `PLAYABLE_LIFT`, **hop** once as the turn starts (staggered 45ms per card), and get a soft halo plus the **running border**: `cardBorderGeometry()` (rounded ring just outside the card) with `borderMaterial()`, a small `ShaderMaterial` (gold base glow plus two bright sparks chasing round the edge; `uTime`/`uOpacity`), cloned per card.
     - Pile wilds are tinted with the picked color: `wildColors` (card id → color, filled by the director's `color` events, cleared on deal), falling back to `pub.currentColor` for the top card and `pendingColor` while in flight.
 - **`zones/`**:
   - `Backs.tsx`: one `InstancedMesh` for the deck layers plus each opponent's **upright** fan (`seatCardSlot`), with a fixed block of instances per seat.
-  - `TurnMarker.tsx`: a cream/gold spotlight on the felt that glides to whoever's turn it is.
+  - `TurnMarker.tsx`: a cream/gold spotlight on the felt that glides to whoever's turn it is, plus **`TurnBaton`**: on each turn change a glowing comet with a short trail runs along the rim from the previous seat to the new one in the direction of play (480ms, `baton` sfx) and fires a shockwave on arrival.
   - `Ghosts.tsx`: transient tweened cards for opponent draws, swaps and reshuffles.
   - `DeckTarget.tsx`: clickable hit box over the deck, glow plane and spinning 3D arrow. Green means draw; red means take the penalty.
-  - `SeatChips.tsx`: **DOM** opponent chips positioned every frame by `SeatProjector`. **drei `<Html>` was removed**, because its per-element React roots crashed with React 19 (`removeChild` and synchronous-unmount errors). Also here: `TimerRing`, `SeatFxStack` (floating seat badges, `toon-text`), the chip catch button, the turn highlight (`TURN_SHADOW`, `TurnPing`, bouncing ▼, gold name pill, ×1.18 scale), and `useSmallScreen` (width < 640 **or height < 520**), which keeps chips compact on phones.
+  - **`SeatAvatars.tsx`**: each opponent's avatar is a `THREE.Sprite` (`sizeAttenuation: false`, so a fixed screen size, but depth-tested, so their standing cards and the rim hide it: the fix for the opposite player's circle being drawn over their cards). The texture is painted on a canvas (`paintChip`): name pill **above** the circle (team-colour stroke; 🤖 / away / offline / OUT / LEFT labels), the avatar emoji, card-count bubble (`UNO!` once shouted), crown, team ring, and on their turn a gold glow, ripple and timer arc. Lifted `AVATAR_LIFT` (0.5) above the seat, ×1.18 on their turn; only the active seat repaints (~15fps). `onClick`: pick a swap target, otherwise open the throw menu.
+  - `SeatChips.tsx`: the **DOM** layer over each avatar, only for things that must stay on top and clickable: bouncing ▼, `PeekStrip` (face-up mini cards: your partner's hand, or everyone's for a spectator), `SeatFxStack` (floating seat badges, `toon-text`) and the Catch button to the right. `SeatProjector` (in the canvas) projects each avatar and the pile to the screen every frame, moves the chips, and fills `seatScreen` / `pileScreen` for things that fly. **drei `<Html>` was removed**, because its per-element React roots crashed with React 19. Also here: `TimerRing` (your badge), and `useSmallScreen` (width < 640 **or height < 520**).
 - **`anim/director.ts`** (`choreograph`, installed via `installDirector()`): turns server events into animations, sound and text.
   - Spawn hints: cards enter from the deck, a seat or the pile.
   - Ghost cards, seat badges, shockwaves and bursts, camera shake.
   - Shout banners, voice, sounds and toasts.
+  - **Pile badges** (`pileFxFor` → `addPileFx` at landing time) for skip, reverse, draw, wild, roulette, skip-all and discard-all.
+  - **Round end**: confetti/celebration waits until the last card lands (+650ms), then a "🏆 {name} is OUT!" callout (team-aware) and a gold shockwave at the winner, unless time ran out.
+  - **Your turn**: `markYourTurn` (banner) plus `navigator.vibrate([30,60,40])`. Toasts for `player_offline`, `spectator_joined`, `team_invite`, `team_paired`.
   - It recomputes seats itself on each batch. `shoutNow(you)` plays your own shout instantly on click; the server echo is de-duplicated.
   - **`anim/callout.ts`** `describeMove(ev, next, you)`: turns one move's events into a single headline (`{icon, title, sub, color}`) for action/wild cards, swaps, roulette, challenges; null for plain moves. The director shows it via `useScene.showCallout` as the card lands (≈2s). Toasts that duplicated it were removed.
 - **`CameraRig.tsx`**: fits the fixed table (portrait gets a steeper view and wider margins), keeps fog just behind the table, and adds pointer parallax and shake. **Compact (landscape phones): a flatter 40° view at a fixed distance (9.9) and target z 0.64, solved numerically so the far chips sit under the top bar and the piles at ~43% height; the near rim tucks under the big hand.** Its `useFrame` runs at priority -1. **`Table.tsx`**: a red body, red-orange felt with sunburst rays and the embossed logo, a gold bumper plus an inner band that lerps to the current color, and the **direction ring**: a static white ellipse with three arrowheads in the current color gliding along it (faster after a reverse).
-- **`sceneStore.ts`**: `sceneRef` (mutable per-frame layout), `spawnHints`, `actorTransforms`, `wildColors`, `COLOR_HEX` (= `NEON` in `src/brand.ts`, the one palette), and `useScene` (callout, ghosts, seat effects, pulses, confetti, shouts). **`HeroCanvas.tsx`**: the orbiting cards on the landing and join pages (same no-post-processing setup, red stage).
+- **`sceneStore.ts`**: `sceneRef` (mutable per-frame layout), `spawnHints`, `actorTransforms`, `wildColors`, `seatScreen` / `pileScreen` (projected screen points), `COLOR_HEX` (= `NEON` in `src/brand.ts`, the one palette), and `useScene` (callout, ghosts, seat effects, pile badges, the your-turn counter, pulses, confetti, shouts). **`HeroCanvas.tsx`**: the orbiting cards on the landing and join pages (same no-post-processing setup, red stage).
 - **`room/`** (`Room.tsx`, `themes.ts`, `Chairs.tsx`, `props.tsx`, `kit.ts`): everything around the table, built from primitives (three's `RoundedBoxGeometry`, cylinders, painted canvas textures). No model files.
   - `THEMES[theme]`: backdrop (= background = fog = the floor's average colour, because the floor is **unlit**), floor tile and rug painters, chair spec, prop placements. `Room` sets `scene.background` and fog colour imperatively, so `CameraRig`'s fog distances survive a theme switch.
   - Layers: floor plane at `FLOOR_Y - 0.02`, rug decal, table light pool, then per-prop blob shadows and lamp pools, all `depthWrite: false` + `polygonOffset` (no z-fighting). The floor can't receive real shadows, so props use blob decals and don't cast.
@@ -308,17 +342,20 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
 - `Landing.tsx`: hero, profile form, create and join. Also exports `useStoredProfile`.
 - `Room.tsx`: the status machine (loading, not found, need join, ready). When ready it shows `GameCanvas` (paused while rotating), a static `.stage-vignette`, `LobbyView` or `InGame`, and **`RotateGate`** on touch devices held upright.
 - `RotateGate.tsx`: "Turn your phone sideways" overlay, plus "Play fullscreen" where `canLockLandscape()`.
-- `Lobby.tsx`: share card (QR code), seat grid (add or remove bots, kick; the remove button is always visible on touch), Start button (moved to the top on `short:` screens, where the lobby becomes two columns that scroll inside the screen), and `RulesPanel` (Basics plus a collapsible **More rules** with one switch per rule; read-only for non-hosts; tooltips come from `ruleInfo.ts`).
+- `Lobby.tsx`: share card (QR code), seat grid (add or remove bots, kick; the remove button is always visible on touch; in team play a team-colour edge, "with X", **+ Invite** / Invited ✓ / Leave team, and an **Invites strip** with Accept / ✕ above the grid; Start is disabled with a hint until the count is valid), Start button (moved to the top on `short:` screens, where the lobby becomes two columns that scroll inside the screen), and `RulesPanel` (Basics plus a collapsible **More rules** with one switch per rule; read-only for non-hosts; tooltips come from `ruleInfo.ts`).
 - `GameHud.tsx` (layout follows the UNO! app):
   - Top: `TopBar` (room code, `RoundClock` pill (gold with "2×" in the last minute, red pulse under 10s, fires the "FINAL MINUTE!" callout when it crosses 60s), rules chip, ⛶ `FullscreenButton` on touch, rules/mute/settings), the settings and rules sheets, `ColorPicker` (radial), `SwapHint`, `TurnStatus` (gold screen frame on your turn).
   - **`ActionCallout`**: the white headline card in the empty middle of the top bar.
-  - Bottom (`BottomHud`): **your badge in the bottom-left corner**, a **big round red UNO! button in the bottom-right corner** (sort pill above it), and one centered row at `bottom: var(--hand-top)` with `TurnPill` (turn text + current-color dot + "+N"), the 🔨 Catch button and the actions.
+  - Bottom (`BottomHud`): **your badge in the bottom-left corner** (team-colour ring; a "👁 Spectating" pill instead for spectators, with no hand or actions; an **UP NEXT** pill above it when you're next, from `nextUp(pub)`), a **big round red UNO! button in the bottom-right corner** (sort pill above it), and one centered row at `bottom: var(--hand-top)` with `TurnPill` (turn text + current-color dot + "+N"), the 🔨 Catch button and the actions.
   - Overlays: `ShoutBanner`, `Toasts` (white pills), `useKeyboard` (←/→, Enter, D, U, Esc).
+  - The gold `turn-frame` breathes (`@keyframes turn-breathe` in `globals.css`).
+- **`TableFx.tsx`**: `anchors` (your badge element, so things can land on you), `screenOf(pid)`, `PileFxLayer` / `PileBadge` (the pile badges: pop, spin or wobble, then fly to the target's seat or fade) and `YourTurnBanner` (gold swoosh with a shine sweep).
+- **`Fun.tsx`**: emotes and throws. `EmoteButton` (grid popover with the credit line), `EmoteLayer` (the animated WebP pops over the sender for ~2.4s), `ThrowMenu` (ring of six buttons around the tapped avatar, closes after 5s; 1.5s cooldown), `ThrowLayer` / `Projectile` (0.65s arc with spin, then a per-item impact: yolk drip, tomato splat, petals, lipstick, foam, 💥 with a shake). `onFunMessage` validates ids and sender, and drops more than 5 per 5s from one sender. Emote files: `public/emotes/<codepoint>.webp` (112px, ~70KB each).
   - AnimatePresence children that replace each other (callout, shout banner) share one grid cell (`col-start-1 row-start-1`), so the one fading out never pushes the new one sideways.
 - **Theme (`globals.css`)**: stage-red `--bg`, `--ink` (#14213d) for outlines and dark text, `--gold`, green `--accent`. Component classes live in **`@layer components`** so Tailwind utilities can override them: `.glass` (solid blue panel with a light rim and a chunky bottom edge, **no blur**), `.btn-primary` (chunky green), `.btn-ghost`, `.input` (white), `.toon-text` (ink stroke + drop shadow), `.stage-vignette`, `.turn-sideways`. The **`short:`** variant (`max-height: 520px`) compacts everything for landscape phones; safe-area insets pad the HUD (`viewportFit: "cover"`).
-- `Scoreboard.tsx`: round and game results with revealed hands; appears 1.3s after the round ends.
-- `Social.tsx`: chat dock and reaction bar. Reactions float up as seat badges.
-- `uiStore.ts`: sort mode, quality tier, reduce-motion setting, room theme (`roomTheme`, Settings → Room), sheet visibility, `sortHand`.
+- `Scoreboard.tsx`: round and game results with revealed hands; appears **3.2s** after the round ends (`SCOREBOARD_DELAY`). Team play: "Your team wins" / "A & B win", winners first, team-colour rows. Taken-over seats say "🤖 played for them". Spectators get **Take a seat** when a seat is free.
+- `Social.tsx`: chat dock and the 😊 emote button (the old reaction bar is gone; not shown in the lobby or to spectators). `useSocialFx` routes `emote` / `throw` messages to `onFunMessage`.
+- `uiStore.ts`: sort mode, quality tier, reduce-motion setting, room theme (`roomTheme`, Settings → Room), sheet visibility, `throwTarget`, `sortHand`.
 
 **Zustand rule:** never return a freshly built array or object from a selector, e.g. `useGame(s => s.chat.filter(...))`. That causes an infinite render loop. Select the raw value, then `useMemo`.
 
@@ -333,6 +370,7 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
 - `playVoice(name, delayMs?)` plays `/sfx/<name>.mp3` (clips are committed in `public/sfx/`), otherwise browser speech. Clips go through a **voice queue** (`E.voiceFreeAt`) so callouts never overlap; a clip that would wait more than 2.5s is dropped. `VOICE_LINES` lists them: `uno`, `caught`, one per action/wild card kind (`skip`, `reverse`, `draw2`, `draw4`, `wild`, `wild4`, `wild_reverse4`, `wild6`, `wild10`, `skip_all`, `discard_all`, `wild_roulette`), `swap` (7 rule), `rotate` (0 rule) and `draw` ("Draw cards!"). `speak()` only cancels when busy and then waits 60ms (Chrome drops an utterance queued in the same tick as `cancel()`).
 - Director hooks (`director.ts`): a `play` event says the card's clip at landing time (number cards are silent); `swap`/`rotate` events say theirs; a `draw` event with reason `penalty`/`challenge`, or a `roulette`, says "Draw cards!" 650ms later for the victim.
 - **Unplayable draw:** `draw()` in `reducer.ts` already ends the turn when the drawn card can't be played (the `drawn` state only exists for a playable card). The director shows a "NO PLAY" seat label (and a toast for you) so the automatic pass is visible.
+- UI/fun sounds (`playSfx`): `next` (up next chime), `baton`, `emote`, `whoosh`, `splat`, `pop`, `boom`, `clink`, `smooch`.
 - Card sounds: `cardSlap()` (air swish, cardstock snap, soft table knock; no pitched tones) for play/action/wild, with a triangle accent on action and an arpeggio on wild.
 - `scripts/generate-voices.mjs` uses ElevenLabs `eleven_v4` (only stability and similarity settings; v4 rejects style/speaker boost) with the `[shouts]` audio tag, falling back to `eleven_v3`, then `eleven_multilingual_v2`.
 
@@ -340,10 +378,10 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
 
 ## 11. Testing and verification
 
-- **Unit tests** (`src/engine/__tests__`): `classic.test.ts` covers deck, start cases, matching, skip and reverse, the challenge, shout timing, timeouts, scoring, lobby and views. `extras.test.ts` covers every switch and the auto-take. `clock.test.ts` covers the round clock (time-up winner, ties, dropped moves, the 2× final stretch).
+- **Unit tests** (`src/engine/__tests__`): `classic.test.ts` covers deck, start cases, matching, skip and reverse, the challenge, shout timing, timeouts, scoring, lobby and views. `extras.test.ts` covers every switch and the auto-take. `clock.test.ts` covers the round clock (time-up winner, ties, dropped moves, the 2× final stretch). `classic.test.ts` also checks the number-only start card and the Discard All deal at 2–10 players. `teams.test.ts` covers invites, auto-pairing, opposite seating, team wins and scoring, settle, time-up totals, no partner catching and partner peek. `presence.test.ts` covers the `offline` action in each phase, reclaim, kicked seats and spectators.
   - Test helpers: `startedGame` and `arrange` (sets known hands and top card and keeps the card count right). `Game` wraps actions with a moving clock.
-- **Fuzz** (`fuzz.test.ts`): bot-only games at 2–10 players under classic, single extra, or random switch mixes, with jump-ins injected, checking the invariants in §5.
-- **Server** (`src/server/__tests__`): optimistic-lock serialisation, stale update rejection, 400 mapping, no leaked hands, scoped Ably capability (Ably sorts the operation arrays alphabetically).
+- **Fuzz** (`fuzz.test.ts`): bot-only games at 2–10 players under classic, single extra, or random switch mixes (team play in 25% of even games with 4+ players), with jump-ins injected, checking the invariants in §5.
+- **Server** (`src/server/__tests__`): optimistic-lock serialisation, stale update rejection, 400 mapping, no leaked hands, scoped Ably capability (Ably sorts the operation arrays alphabetically), `markOffline` with injected presence, broadcasts to taken-over seats and spectators, spectator snapshot peek.
 - **E2E** (`e2e/multiplayer.spec.ts`): host and guest in separate contexts with real cookies. Covers join by link, rules sync, read-only rules for guests, bot, start, no leaked hands, version sync (the human whose turn it is presses `D`), and refresh keeping your seat. Wait for `IN_GAME` (the turn pill text), **not** `/turn/`: the lobby's "Turn timer" label also matches and races the guest.
 - **Phone layouts in the browser pane:** `resize_window` 740×360 emulates a landscape phone with touch (width < 768), so `IS_TOUCH`, `short:` and `compact` all apply; reload after resizing (`IS_TOUCH` is read at load). The mobile preset (375×812) shows the rotate prompt.
 - **Manual multi-tab:** open `http://localhost:3100/r/CODE?devUser=alice` in separate tabs. To get "my turn with 2 cards", use `/api/dev/rig` (dev transport only). Background tabs don't render the canvas, so front the tab or use `get_page_text` and `javascript_tool`. Run `window.__neono.useGame.getState()` to inspect state.
@@ -394,7 +432,7 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
 ## 14. Possible next steps (not done)
 
 - Rotate the Ably key: it was pasted in chat.
-- Spectator mode, accounts and stats, and match history weren't chosen for v1.
+- Accounts and stats, and match history weren't chosen for v1.
 - Bots can't jump in. Jump-in for humans is fully supported.
 - If Ably's 200-connection limit becomes a constraint, Cloudflare Durable Objects was the alternative realtime design considered at planning time.
 
@@ -403,6 +441,8 @@ Very long "marathon" games (huge hands, no mercy rule) are legitimate, so up to 
 ## 15. Leaving and closing rooms
 
 - **Leave in the lobby / between rounds:** the player is removed. **Leave mid-game:** `removePlayer` in `reducer.ts` turns the seat into a bot (`isBot = true`, `takenOver = true`), keeps the hand, and schedules a bot deadline if it's their turn. Rejoining through the link (`join` as the same id) gives the seat back. `back_to_lobby` and a fresh `start` drop `takenOver` bots.
+- **Offline:** see §5 and §7. A dropped player's seat is taken over within ~3s (lobby: removed); they reclaim it by reopening the link. A restart (`start`, `back_to_lobby`) drops takeover seats, so offline players are excluded.
+- **Kick mid-game:** like leave, but the seat is marked `kicked` and can't be reclaimed.
 - **Host leaves:** the host role passes to the next human (bots, including takeover bots, are skipped).
 - **Close room:** host-only `close_room` action → `room_closed` event (everyone gets a toast and goes home) → `perform` in `room-service.ts` deletes the row (`store.remove`). The room is also deleted when the last human leaves or is kicked (`leave`/`kick` with no human left).
 - UI: lobby has "Leave room" and (host) "Close room"; the in-game settings sheet has the same two. Close asks for confirmation.

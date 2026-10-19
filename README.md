@@ -10,7 +10,9 @@ A 3D neon online card game in the style of UNO, for 2–10 players. You create a
   - Bloom and Vignette post-processing
   - automatic quality scaling on slower devices
 - **Shout and catch.** Press **UNO!** when you're down to one card. Everyone sees a banner and hears the shout. If you forget, other players get a **🔨 Catch** button for a few seconds, and you draw the penalty.
-- **Extras.** Bots to fill seats, table chat and emoji reactions, synthesized sound effects with an optional music loop, a keyboard shortcut for every action, and a layout that works on phones.
+- **2v2 teams.** The host can switch on team play (up to 5 teams of two). Players invite each other in the lobby; anyone left unpaired gets a random partner at Start. Partners sit opposite each other, see each other's cards, and win together.
+- **Drop-ins and drop-outs.** A player who loses connection is replaced by a bot within a few seconds and gets their seat back when they return. Anyone who opens the link mid-round watches as a spectator, sees every hand, and can take a seat between rounds.
+- **Extras.** Bots to fill seats, table chat, animated emotes, things to throw at other players (tap their avatar), synthesized sound effects with an optional music loop, a keyboard shortcut for every action, and a layout that works on phones.
 
 ## Play locally (no accounts needed)
 
@@ -107,3 +109,7 @@ src/audio    Web Audio sound effects, music loop, voice clips
 ```
 
 To rename the game, edit `src/brand.ts`. It holds the game name and the shout label. "UNO" is a Mattel trademark, which is why the game is called NEONO and uses its own card art.
+
+## Credits
+
+The animated emotes in `public/emotes/` are from [Noto Emoji Animation](https://googlefonts.github.io/noto-emoji-animation/) by Google, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). They were resized and re-encoded for the web.
