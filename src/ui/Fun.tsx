@@ -17,7 +17,7 @@ import { screenOf } from "./TableFx";
  * receivers only accept known ids, from people in the room, at a sane rate.
  */
 
-/** Self-hosted copies of Noto Emoji Animation (CC BY 4.0), shrunk to 160px. */
+/** Self-hosted copies of Noto Emoji Animation (CC BY 4.0), shrunk to 112px. */
 export const emoteSrc = (id: EmoteId) => `/emotes/${EMOTES[id].code}.webp`;
 
 interface Emote {
@@ -109,6 +109,7 @@ export function EmoteButton() {
                 <img src={emoteSrc(id)} alt={EMOTES[id].emoji} width={40} height={40} className="h-9 w-9 short:h-8 short:w-8" />
               </button>
             ))}
+            <div className="col-span-full pt-0.5 text-center text-[9px] font-semibold text-white/60">Noto Emoji · Google · CC BY 4.0</div>
           </motion.div>
         )}
       </AnimatePresence>

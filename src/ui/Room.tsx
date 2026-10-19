@@ -58,11 +58,13 @@ function JoinCard({ code }: { code: string }) {
               {host.avatar} {host.name}&apos;s table · {pub?.players.filter((p) => p.status !== "left").length}/10 players
             </div>
           )}
-          {pub?.phase === "playing" && <div className="mt-2 text-xs font-semibold text-[#ffe48a]">A round is in progress — you can join when it ends.</div>}
+          {pub?.phase === "playing" && (
+            <div className="mt-2 text-xs font-semibold text-[#ffe48a]">A round is in progress: watch it now (you&apos;ll see every hand) and take a seat when it ends.</div>
+          )}
         </div>
         <ProfileForm value={profile} onChange={setProfile} autoFocus />
         <button className="btn btn-primary font-display mt-5 w-full py-3.5" disabled={busy || !profile.name.trim()} onClick={join}>
-          {busy ? "Joining…" : "Join table"}
+          {busy ? "Joining…" : pub?.phase === "playing" ? "Watch the game" : "Join table"}
         </button>
         {error && <div className="mt-3 rounded-lg bg-white px-3 py-2 text-center text-sm font-semibold text-neon-red">{error}</div>}
       </motion.div>

@@ -316,7 +316,7 @@ export function ColorPicker() {
     if (p?.kind === "color") void playCard(p.cardId, { color });
     else void sendAction({ type: "choose_color", color });
   };
-  const title = mustChoose ? (purpose === "roulette" ? "Color Roulette — name a color" : "Pick the starting color") : "Pick a color";
+  const title = mustChoose && purpose === "roulette" ? "Color Roulette — name a color" : "Pick a color";
   return (
     <AnimatePresence>
       {open && (
@@ -457,6 +457,7 @@ export function BottomHud() {
   const catchTarget = useCatchTarget();
   const small = useSmallScreen();
   if (!priv || !pub || pub.phase !== "playing") return null;
+  if (priv.spectator) return <SpectatorPill />;
   const me = pub.players.find((p) => p.id === you);
   const badge = small ? 48 : 56;
   const myTurn = pub.turnPlayerId === you;
@@ -599,6 +600,17 @@ export function BottomHud() {
 }
 
 // ── turn status: a gold screen frame on your turn (the turn pill lives in the bottom HUD) ──
+
+/** Bottom-left for someone watching: they see every hand (mini cards over each seat). */
+function SpectatorPill() {
+  return (
+    <div className="pointer-events-none fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-[max(0.75rem,env(safe-area-inset-left))] z-30 short:bottom-2">
+      <div className="glass flex items-center gap-2 !rounded-full px-3 py-1.5 text-xs font-bold">
+        <span>👁</span> Spectating · you&apos;ll get a seat option when the round ends
+      </div>
+    </div>
+  );
+}
 
 /** The next player in the direction of play (skipping anyone who's out). */
 function nextUp(pub: PublicView): string | null {

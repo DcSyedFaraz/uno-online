@@ -89,6 +89,8 @@ function isLeader(players: PublicView["players"] | undefined, presence: string[]
 
 /** How long someone must be gone before a bot takes their seat (a page refresh is quicker than this). */
 const OFFLINE_GRACE_MS = 3000;
+/** Someone we've never seen connect (still loading, a slow phone) gets much longer. */
+const NEVER_SEEN_GRACE_MS = 20_000;
 
 /**
  * Watches presence for players (and spectators) whose connection dropped and reports them.
@@ -102,6 +104,7 @@ function useOfflineWatch(code: string) {
   const you = useGame((s) => s.you);
   const missing = useRef(new Map<string, number>());
   const reported = useRef(new Map<string, number>());
+  const seen = useRef(new Set<string>());
 
   useEffect(() => {
     // an empty list means presence isn't known yet
@@ -110,6 +113,7 @@ function useOfflineWatch(code: string) {
       return;
     }
     const here = new Set(presence);
+    for (const pid of here) seen.current.add(pid);
     const watched = [...(players ?? []).filter((p) => !p.isBot && p.status !== "left").map((p) => p.id), ...(spectators ?? []).map((s) => s.id)];
     const now = Date.now();
     for (const pid of watched) {
@@ -124,9 +128,10 @@ function useOfflineWatch(code: string) {
       const g = useGame.getState();
       if (!g.connected || missing.current.size === 0) return;
       // the leader reports first; everyone else is a backup
-      const grace = isLeader(g.pub?.players, g.presence, g.you) ? OFFLINE_GRACE_MS : g.spectator ? OFFLINE_GRACE_MS * 3 : OFFLINE_GRACE_MS * 2;
+      const backup = isLeader(g.pub?.players, g.presence, g.you) ? 1 : g.spectator ? 3 : 2;
       const now = Date.now();
       for (const [pid, since] of missing.current) {
+        const grace = (seen.current.has(pid) ? OFFLINE_GRACE_MS : NEVER_SEEN_GRACE_MS) * backup;
         if (now - since < grace || now - (reported.current.get(pid) ?? 0) < 10_000) continue;
         reported.current.set(pid, now);
         api.offline(code, pid).catch(() => {});

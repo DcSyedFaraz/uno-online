@@ -2,6 +2,7 @@
 
 import type { Action, Color } from "@/engine";
 import { api, ApiError } from "./api";
+import { loadProfile } from "./profile";
 import { useGame } from "./store/game-store";
 
 export async function sendAction(action: Action): Promise<boolean> {
@@ -9,6 +10,21 @@ export async function sendAction(action: Action): Promise<boolean> {
   if (!code) return false;
   try {
     receive(await api.act(code, action));
+    return true;
+  } catch (e) {
+    toast(e instanceof ApiError ? e.message : "Connection problem — try again", "error");
+    return false;
+  }
+}
+
+/** A spectator takes a free seat (between rounds), or a returning player takes theirs back. */
+export async function takeSeat(): Promise<boolean> {
+  const { code, you, pub, receive, toast } = useGame.getState();
+  if (!code) return false;
+  const w = pub?.spectators.find((s) => s.id === you);
+  const profile = loadProfile() ?? { name: w?.name ?? "Guest", avatar: w?.avatar ?? "🙂" };
+  try {
+    receive(await api.join(code, profile));
     return true;
   } catch (e) {
     toast(e instanceof ApiError ? e.message : "Connection problem — try again", "error");

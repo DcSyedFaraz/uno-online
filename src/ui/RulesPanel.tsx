@@ -117,6 +117,17 @@ export function RulesPanel({ settings, editable }: { settings: RuleSettings; edi
             options={[0, 3, 5, 7].map((n) => ({ value: n as RuleSettings["roundTimerMin"], label: n ? `${n} min` : "Off" }))}
           />
         </Row>
+        <Row label="Teams" help={RULE_HELP.teamPlay}>
+          <Segmented
+            value={settings.teamPlay ? "pairs" : "off"}
+            disabled={ro}
+            onChange={(v) => update({ teamPlay: v === "pairs" })}
+            options={[
+              { value: "off" as const, label: "Off" },
+              { value: "pairs" as const, label: "2v2 pairs" },
+            ]}
+          />
+        </Row>
         <Row label="Win by" help={RULE_HELP.winMode}>
           <Segmented
             value={settings.winMode}
@@ -291,7 +302,8 @@ export function RulesPanel({ settings, editable }: { settings: RuleSettings; edi
 }
 
 function stripBasics(s: RuleSettings): Patch {
-  const { handSize, turnTimerSec, roundTimerMin, winMode, targetPoints, deckCount, ...rest } = s;
+  const { handSize, turnTimerSec, roundTimerMin, winMode, teamPlay, targetPoints, deckCount, ...rest } = s;
+  void teamPlay;
   void handSize;
   void turnTimerSec;
   void roundTimerMin;
