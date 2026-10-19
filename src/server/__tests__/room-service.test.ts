@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createRoom, HttpError, perform, snapshot } from "../room-service";
-import { createAblyToken } from "../realtime";
+import { createRoom, HttpError, markOffline, perform, snapshot } from "../room-service";
+import { createAblyToken, devSubscribe } from "../realtime";
+import { gameChannel } from "@/shared/protocol";
 import { getStore } from "../store";
 
 // Runs against the in-memory dev store (no DATABASE_URL) and the dev bus (no ABLY_API_KEY).
@@ -94,5 +95,46 @@ describe("closing and emptying rooms", () => {
     await perform(code, "guest", { type: "leave" });
     const rec = (await getStore().get(code))!;
     expect(rec.state.players.find((p) => p.id === "guest")).toMatchObject({ isBot: true, takenOver: true });
+  });
+});
+
+describe("offline players and spectators", () => {
+  const here = (...ids: string[]) => async () => new Set(ids);
+
+  it("a reported player is only taken over if presence confirms they're gone", async () => {
+    const code = await roomWithTwoBots();
+    await perform(code, "host", { type: "start" });
+    expect(await markOffline(code, "host", "guest", here("host", "guest"))).toEqual({ applied: false });
+    expect((await getStore().get(code))!.state.players.find((p) => p.id === "guest")!.isBot).toBe(false);
+    expect(await markOffline(code, "host", "guest", here("host"))).toEqual({ applied: true });
+    expect((await getStore().get(code))!.state.players.find((p) => p.id === "guest")).toMatchObject({ isBot: true, takenOver: true, offline: true });
+    // reporting again is harmless
+    expect(await markOffline(code, "host", "guest", here("host"))).toEqual({ applied: false });
+    await expect(markOffline(code, "stranger", "host", here())).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("a taken-over player and spectators keep getting game messages", async () => {
+    const code = await roomWithTwoBots();
+    await perform(code, "host", { type: "start" });
+    await markOffline(code, "host", "guest", here("host"));
+    await perform(code, "late", { type: "join", name: "Late", avatar: "👀" });
+    const got: string[] = [];
+    const offs = ["guest", "late"].map((pid) => devSubscribe(gameChannel(code, pid), () => got.push(pid)));
+    await perform(code, "host", { type: "call_uno" }).catch(() => {});
+    await perform(code, "late", { type: "leave" });
+    offs.forEach((off) => off());
+    expect(got).toContain("guest");
+    expect(got).toContain("late");
+  });
+
+  it("a spectator's snapshot has every hand", async () => {
+    const code = await roomWithTwoBots();
+    await perform(code, "host", { type: "start" });
+    await perform(code, "late", { type: "join", name: "Late", avatar: "👀" });
+    const snap = await snapshot(code, "late");
+    expect(snap.member).toBe(true);
+    expect(snap.spectator).toBe(true);
+    const rec = (await getStore().get(code))!;
+    expect(Object.keys(snap.msg.priv!.peek!).sort()).toEqual(rec.state.players.map((p) => p.id).sort());
   });
 });

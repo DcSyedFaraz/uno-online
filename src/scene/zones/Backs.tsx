@@ -10,7 +10,9 @@ import { sceneRef } from "../sceneStore";
 
 const FAN_MAX = 12;
 const DECK_LAYERS = 34;
-const MAX = DECK_LAYERS + 9 * FAN_MAX;
+/** up to 10 seats around the table (a spectator sees all ten players as opponents) */
+const SEATS = 10;
+const MAX = DECK_LAYERS + SEATS * FAN_MAX;
 
 interface Slot {
   pos: THREE.Vector3;
@@ -67,7 +69,7 @@ export function Backs() {
       for (const p of pub.players) {
         if (p.id === you || p.status !== "active") continue;
         const seat = sceneRef.seats.get(p.id);
-        if (!seat || seat.rel < 1 || seat.rel > 9) continue;
+        if (!seat || seat.rel < 1 || seat.rel > SEATS) continue;
         const base = DECK_LAYERS + (seat.rel - 1) * FAN_MAX;
         const shown = Math.min(FAN_MAX, p.cardCount);
         // held upright like a real hand: backs to the table, fanned along the edge

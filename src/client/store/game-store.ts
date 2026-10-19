@@ -47,6 +47,8 @@ export interface GameStore {
   you: string | null;
   transport: Transport;
   member: boolean;
+  /** watching, not playing (sees every hand) */
+  spectator: boolean;
   removed: boolean;
   connected: boolean;
   version: number;
@@ -84,6 +86,7 @@ const initial = {
   you: null,
   transport: "sse" as Transport,
   member: false,
+  spectator: false,
   removed: false,
   connected: false,
   version: 0,
@@ -135,6 +138,7 @@ export const useGame = create<GameStore>((set, get) => ({
       pub: msg.pub,
       priv: msg.priv,
       member: !!msg.priv,
+      spectator: !!msg.priv?.spectator,
       removed: !!msg.removed && s.member,
       // a play still in flight when the round ends (e.g. the clock ran out) is dropped by the server
       pendingPlayId: s.pendingPlayId && hand.has(s.pendingPlayId) && msg.pub.phase === "playing" ? s.pendingPlayId : null,

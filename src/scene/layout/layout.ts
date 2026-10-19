@@ -57,7 +57,19 @@ export function computeSeats(players: PublicPlayer[], you: string | null, d: Tab
   const seats = new Map<string, Seat>();
   const n = players.length;
   if (n === 0) return seats;
-  const me = Math.max(0, players.findIndex((p) => p.id === you));
+  const idx = players.findIndex((p) => p.id === you);
+  // a spectator sits nowhere: everyone goes around the table and the bottom (the camera) stays empty
+  if (idx < 0 && you) {
+    const angles = opponentAngles(n, d);
+    players.forEach((p, i) => {
+      const angle = angles[i];
+      const chip = ellipsePoint(d, angle, d.portrait ? 1.0 : 1.06, 0.05);
+      const fan = ellipsePoint(d, angle, 0.7, 0.03);
+      seats.set(p.id, { pid: p.id, rel: i + 1, angle, chip, fan, yaw: Math.atan2(fan.x, fan.z) });
+    });
+    return seats;
+  }
+  const me = Math.max(0, idx);
   const angles = opponentAngles(n - 1, d);
   for (let rel = 0; rel < n; rel++) {
     const p = players[(me + rel) % n];

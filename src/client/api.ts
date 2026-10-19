@@ -1,7 +1,7 @@
 "use client";
 
 import type { Action } from "@/engine";
-import type { GameMessage, RoomSnapshot } from "@/shared/protocol";
+import type { ChatKind, GameMessage, RoomSnapshot } from "@/shared/protocol";
 
 export class ApiError extends Error {
   constructor(
@@ -54,6 +54,7 @@ export const api = {
   join: (code: string, profile: Profile) => request<GameMessage>(`/api/rooms/${code}/join`, { method: "POST", body: profile }),
   act: (code: string, action: Action) => request<GameMessage>(`/api/rooms/${code}/action`, { method: "POST", body: action }),
   tick: (code: string) => request<{ applied: boolean; v: number }>(`/api/rooms/${code}/tick`, { method: "POST" }),
-  devChat: (code: string, kind: "chat" | "react", text: string) =>
-    request<{ ok: true }>("/api/dev/chat", { method: "POST", body: { code, kind, text } }),
+  offline: (code: string, pid: string) => request<{ applied: boolean }>(`/api/rooms/${code}/offline`, { method: "POST", body: { pid } }),
+  devChat: (code: string, kind: ChatKind, text: string, to?: string) =>
+    request<{ ok: true }>("/api/dev/chat", { method: "POST", body: { code, kind, text, to } }),
 };

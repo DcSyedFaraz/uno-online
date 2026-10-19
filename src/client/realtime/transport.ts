@@ -1,7 +1,7 @@
 "use client";
 
 import type * as AblyTypes from "ably";
-import { CHAT_MAX, chatChannel, gameChannel, type ChatKind, type ChatMessage, type GameMessage, type Transport } from "@/shared/protocol";
+import { CHAT_KINDS, CHAT_MAX, chatChannel, gameChannel, type ChatKind, type ChatMessage, type GameMessage, type Transport } from "@/shared/protocol";
 import { api, devHeaders, devUser } from "../api";
 
 export interface RoomHandlers {
@@ -14,7 +14,8 @@ export interface RoomHandlers {
 }
 
 export interface RoomConnection {
-  sendChat(kind: ChatKind, text: string): Promise<void>;
+  /** `to`: the target player of a throw */
+  sendChat(kind: ChatKind, text: string, to?: string): Promise<void>;
   close(): void;
 }
 
@@ -29,13 +30,12 @@ function connectSse(code: string, h: RoomHandlers): RoomConnection {
   es.addEventListener("ready", () => h.onConnected());
   es.addEventListener("game", (e) => h.onGame(JSON.parse((e as MessageEvent).data)));
   const onChat = (e: Event) => h.onChat(JSON.parse((e as MessageEvent).data));
-  es.addEventListener("chat", onChat);
-  es.addEventListener("react", onChat);
+  for (const kind of CHAT_KINDS) es.addEventListener(kind, onChat);
   es.addEventListener("presence", (e) => h.onPresence(JSON.parse((e as MessageEvent).data).members));
   es.onerror = () => h.onDisconnected();
   return {
-    async sendChat(kind, text) {
-      await api.devChat(code, kind, text.slice(0, CHAT_MAX));
+    async sendChat(kind, text, to) {
+      await api.devChat(code, kind, text.slice(0, CHAT_MAX), to);
     },
     close() {
       es.close();
@@ -73,7 +73,7 @@ function connectAbly(code: string, pid: string, h: RoomHandlers): RoomConnection
 
     chat = client.channels.get(chatChannel(code));
     await chat.subscribe((m) => {
-      if (m.name !== "chat" && m.name !== "react") return;
+      if (!CHAT_KINDS.includes(m.name as ChatKind)) return;
       const data = m.data as ChatMessage;
       // trust Ably's verified clientId over the payload
       h.onChat({ ...data, pid: m.clientId ?? data.pid });
@@ -87,9 +87,9 @@ function connectAbly(code: string, pid: string, h: RoomHandlers): RoomConnection
   });
 
   return {
-    async sendChat(kind, text) {
+    async sendChat(kind, text, to) {
       if (!chat) return;
-      const msg: ChatMessage = { id: crypto.randomUUID(), kind, pid, text: text.slice(0, CHAT_MAX), at: Date.now() };
+      const msg: ChatMessage = { id: crypto.randomUUID(), kind, pid, text: text.slice(0, CHAT_MAX), at: Date.now(), ...(to ? { to } : {}) };
       await chat.publish(kind, msg);
     },
     close() {
