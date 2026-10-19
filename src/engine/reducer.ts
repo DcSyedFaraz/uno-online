@@ -1,6 +1,6 @@
 import { ZodError } from "zod";
 import { drawValue, isWild } from "./cards";
-import { BOT_AVATARS, BOT_NAMES, botColor, completePlay, decideBot } from "./bots";
+import { botAvatar, BOT_NAMES, botColor, completePlay, decideBot } from "./bots";
 import { discardMatching, EFFECTS, takePenalty } from "./effects";
 import { assertRule, RuleError } from "./errors";
 import { jumpInBlocker, matchesForPlayer, needsColor, needsSwapTarget, playBlocker } from "./legal";
@@ -544,7 +544,7 @@ function addBot(ctx: Ctx, actor: PlayerState) {
   const free = BOT_NAMES.filter((n) => !used.has(n));
   const name = free.length ? pick(free, ctx.rng) : `Bot ${state.players.length + 1}`;
   const id = `bot_${Math.floor(ctx.rng() * 2 ** 32).toString(36)}`;
-  state.players.push(newPlayer({ id, name, avatar: pick(BOT_AVATARS, ctx.rng) }, true));
+  state.players.push(newPlayer({ id, name, avatar: botAvatar(ctx.rng) }, true));
   ctx.events.push({ t: "player_joined", pid: id });
 }
 

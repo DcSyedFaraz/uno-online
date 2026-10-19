@@ -7,7 +7,8 @@ import { EMOTES, THROWABLES, type ChatMessage, type EmoteId, type ThrowableId } 
 import { playSfx, unlockAudio } from "@/audio/sound";
 import { sendChat } from "@/client/realtime/useRoom";
 import { useGame } from "@/client/store/game-store";
-import { sceneRef } from "@/scene/sceneStore";
+import { sceneRef, useScene } from "@/scene/sceneStore";
+import type { Mood } from "@/client/avatars";
 import { useUi } from "./uiStore";
 import { screenOf } from "./TableFx";
 
@@ -47,6 +48,23 @@ function allowed(pid: string) {
 }
 
 /** Called for every incoming emote/throw message (see useSocialFx). */
+/** The sender's face while their emote plays, and the target's when something hits them. */
+const EMOTE_MOOD: Record<EmoteId, Mood> = {
+  laugh: "happy",
+  angry: "angry",
+  shock: "shock",
+  cry: "sad",
+  party: "happy",
+  cool: "wink",
+  mindblown: "dizzy",
+  sleepy: "sleepy",
+  clap: "happy",
+  fire: "wink",
+  skull: "dizzy",
+  kiss: "love",
+};
+const HIT_MOOD: Record<ThrowableId, Mood> = { egg: "angry", tomato: "angry", rose: "love", kiss: "love", cheers: "happy", bomb: "dizzy" };
+
 export function onFunMessage(m: ChatMessage) {
   const pub = useGame.getState().pub;
   const inRoom = (pid: string) => !!pub?.players.some((p) => p.id === pid);
@@ -55,12 +73,15 @@ export function onFunMessage(m: ChatMessage) {
     const e: Emote = { id: ids++, pid: m.pid, emote: m.text as EmoteId };
     useFx.setState((s) => ({ emotes: [...s.emotes.filter((x) => x.pid !== m.pid), e] }));
     playSfx("emote");
+    useScene.getState().setMood(m.pid, EMOTE_MOOD[e.emote], 0, 2600);
     setTimeout(() => useFx.setState((s) => ({ emotes: s.emotes.filter((x) => x.id !== e.id) })), 2600);
   }
   if (m.kind === "throw" && m.text in THROWABLES && m.to && m.to !== m.pid && inRoom(m.to)) {
     const t: Throw = { id: ids++, from: m.pid, to: m.to, item: m.text as ThrowableId };
     useFx.setState((s) => ({ throws: [...s.throws.slice(-5), t] }));
     playSfx("whoosh");
+    useScene.getState().setMood(m.pid, "wink", 0, 1200);
+    useScene.getState().setMood(m.to, HIT_MOOD[t.item], 650, 2400);
     setTimeout(() => useFx.setState((s) => ({ throws: s.throws.filter((x) => x.id !== t.id) })), 2600);
   }
 }

@@ -21,6 +21,7 @@ import { RotateGate } from "./RotateGate";
 import { Scoreboard } from "./Scoreboard";
 import { ChatDock, useSocialFx } from "./Social";
 import { SeatChips } from "@/scene/zones/SeatChips";
+import { Face } from "./Face";
 
 const GameCanvas = dynamic(() => import("@/scene/GameCanvas"), { ssr: false });
 const HeroCanvas = dynamic(() => import("@/scene/HeroCanvas"), { ssr: false });
@@ -54,8 +55,9 @@ function JoinCard({ code }: { code: string }) {
           <div className="text-xs font-bold uppercase tracking-[0.2em] text-white/70">You&apos;re invited to</div>
           <div className="font-display text-3xl font-black tracking-[0.18em]">{code}</div>
           {host && (
-            <div className="mt-1 text-sm text-white/80">
-              {host.avatar} {host.name}&apos;s table · {pub?.players.filter((p) => p.status !== "left").length}/10 players
+            <div className="mt-1 flex items-center justify-center gap-1.5 text-sm text-white/80">
+              <Face avatar={host.avatar} size={22} />
+              {host.name}&apos;s table · {pub?.players.filter((p) => p.status !== "left").length}/10 players
             </div>
           )}
           {pub?.phase === "playing" && (

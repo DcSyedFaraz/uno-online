@@ -193,6 +193,8 @@ export function choreograph(b: Batch) {
         const cardVoice = CARD_VOICE[e.card.kind];
         if (cardVoice) playVoice(cardVoice, land);
         if (e.jumpIn) scene.addSeatFx(e.pid, "JUMP-IN!", "gold", true, t);
+        // faces: a cheeky grin for hitting someone, a smile for any other action
+        if (e.card.kind !== "number") scene.setMood(e.pid, isDrawCard(e.card) ? "wink" : "happy", land, 1800);
         if (isDrawCard(e.card)) sceneRef.shake = Math.max(sceneRef.shake, e.card.kind === "wild10" ? 1 : 0.35);
         const fx = pileFxFor(e.card, ev, next);
         if (fx) scene.addPileFx(fx, land - 40);
@@ -215,7 +217,9 @@ export function choreograph(b: Batch) {
           scene.addSeatFx(e.pid, "NO PLAY", "white", false, t + 450);
           if (e.pid === you) game.toast("Nothing you can play, turn passes", "info");
         }
+        if (e.reason === "draw" && next.phase === "playing" && next.turnPlayerId !== e.pid) scene.setMood(e.pid, "annoyed", t + 450, 1800);
         if (penalty) {
+          scene.setMood(e.pid, e.count >= 4 ? "shock" : "sad", t + 200, e.count >= 4 ? 2600 : 2000);
           scene.addSeatFx(e.pid, `+${e.count}`, "red", e.count >= 4, t + 200);
           if (e.count >= 4) sceneRef.shake = Math.max(sceneRef.shake, Math.min(1, e.count / 10));
         }
@@ -230,7 +234,10 @@ export function choreograph(b: Batch) {
         break;
       }
       case "skip":
-        e.pids.forEach((pid) => scene.addSeatFx(pid, "⊘ SKIP", "white", true, t + 250));
+        e.pids.forEach((pid) => {
+          scene.addSeatFx(pid, "⊘ SKIP", "white", true, t + 250);
+          scene.setMood(pid, "annoyed", t + 250, 2000);
+        });
         playSfx("skip", t + 250);
         break;
       case "reverse":
@@ -241,6 +248,8 @@ export function choreograph(b: Batch) {
         playSfx("stack", t + 300);
         break;
       case "swap": {
+        scene.setMood(e.a, "happy", t + 300, 2000);
+        scene.setMood(e.b, "shock", t + 300, 2200);
         const mine = e.a === you || e.b === you;
         if (mine) {
           const other = e.a === you ? e.b : e.a;
@@ -305,9 +314,12 @@ export function choreograph(b: Batch) {
       }
       case "challenge":
         scene.addSeatFx(e.guilty ? e.offender : e.victim, e.guilty ? "BUSTED!" : "FAIR!", e.guilty ? "red" : "blue", true, t);
+        scene.setMood(e.guilty ? e.offender : e.victim, "sad", t, 2400);
+        scene.setMood(e.guilty ? e.victim : e.offender, "happy", t, 2400);
         break;
       case "uno_call":
         scene.addSeatFx(e.pid, BRAND.shout, "gold", true, t);
+        scene.setMood(e.pid, "wink", t, 2200);
         // my own shout already played instantly on click
         if (e.pid !== you || !recentOwnShout()) {
           scene.addShout({ pid: e.pid, kind: "shout" });
@@ -317,6 +329,8 @@ export function choreograph(b: Batch) {
         break;
       case "uno_caught":
         scene.addSeatFx(e.pid, "🔨 CAUGHT!", "red", true, t);
+        scene.setMood(e.pid, "shock", t, 2400);
+        scene.setMood(e.by, "happy", t, 2000);
         scene.addShout({ pid: e.pid, kind: "caught", by: e.by });
         playVoice("caught");
         sceneRef.shake = Math.max(sceneRef.shake, 0.6);
@@ -325,6 +339,7 @@ export function choreograph(b: Batch) {
         break;
       case "eliminated":
         scene.addSeatFx(e.pid, "OUT!", "red", true, t);
+        scene.setMood(e.pid, "dizzy", t, 3000);
         game.toast(`${name(e.pid)} hit the card limit and is out of the round`, "warn");
         playSfx("out", t);
         break;
@@ -339,6 +354,7 @@ export function choreograph(b: Batch) {
         break;
       case "timeout":
         if (e.pid === you) game.toast("Time's up!", "warn");
+        scene.setMood(e.pid, "sleepy", t, 2000);
         scene.addSeatFx(e.pid, "TIME!", "white", false, t);
         break;
       case "round_over": {
@@ -348,6 +364,8 @@ export function choreograph(b: Batch) {
         // let the last card land and be seen before the party (the scoreboard waits longer still)
         const at = t + 650;
         setTimeout(() => useScene.getState().celebrate(won), at);
+        const winners = new Set([e.winnerId, next.players.find((p) => p.id === e.winnerId)?.partnerId].filter(Boolean));
+        for (const p of next.players) if (p.status !== "left") scene.setMood(p.id, winners.has(p.id) ? "love" : "sad", at, 4000);
         playSfx(won ? "win" : "lose", at + 200);
         if (e.winnerId && !e.timeUp) {
           const last = findPlayedCard(ev);

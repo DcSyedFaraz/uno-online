@@ -428,7 +428,7 @@ describe("lobby", () => {
     let s = act(lobby(), { type: "add_bot" }, "h");
     s = act(s, { type: "join", name: "G", avatar: "😎" }, "g");
     const bot = s.players.find((p) => p.isBot)!;
-    expect(bot).toBeTruthy();
+    expect(bot.avatar).toMatch(/^b:[0-9a-z]+$/); // drawn as a robot by the client
     s = act(s, { type: "remove_bot", playerId: bot.id }, "h");
     expect(s.players.some((p) => p.isBot)).toBe(false);
     s = act(s, { type: "leave" }, "h");

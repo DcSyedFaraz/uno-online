@@ -10,7 +10,8 @@ import { playCard } from "@/client/actions";
 import { serverNow } from "@/client/clock";
 import { useGame } from "@/client/store/game-store";
 import { useUi } from "@/ui/uiStore";
-import { COLOR_HEX, sceneRef } from "../sceneStore";
+import { avatarBitmap, isCharacter, type Mood } from "@/client/avatars";
+import { COLOR_HEX, sceneRef, useScene } from "../sceneStore";
 import { useSmallScreen } from "./SeatChips";
 
 /**
@@ -33,6 +34,12 @@ export interface ChipLayout {
   cy: number;
 }
 
+/** Avatar circle size in CSS px: a little smaller on phones and at crowded tables. */
+export function chipSize(small: boolean, players: number): number {
+  const crowded = players >= 8;
+  return small ? (crowded ? 36 : 42) : crowded ? 52 : 60;
+}
+
 export function chipLayout(size: number, small: boolean): ChipLayout {
   const pillH = small ? 16 : 20;
   const cy = 2 + pillH + 5 + 12 + size / 2;
@@ -53,6 +60,8 @@ interface ChipState {
   timerColor: string;
   /** 0..1 phase of the turn ripple */
   ripple: number;
+  /** the character in its current mood, rasterised (null: legacy emoji, or still loading) */
+  face: HTMLCanvasElement | null;
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -133,7 +142,7 @@ function paintChip(ctx: CanvasRenderingContext2D, L: ChipLayout, s: ChipState) {
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fillStyle = g;
   ctx.fill();
-  // timer arc
+  // timer arc (drawn under the face, which is inset on their turn so the arc shows around it)
   if (s.turn) {
     ctx.lineWidth = 3.5;
     ctx.lineCap = "round";
@@ -152,8 +161,15 @@ function paintChip(ctx: CanvasRenderingContext2D, L: ChipLayout, s: ChipState) {
     ctx.filter = "grayscale(1)";
     if (ctx.filter !== "grayscale(1)") ctx.globalAlpha *= 0.55;
   }
-  ctx.font = `${Math.round(L.size * 0.5)}px ${EMOJI_FONT}`;
-  ctx.fillText(p.avatar, cx, cy + L.size * 0.04);
+  if (s.face) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, s.turn ? r - 5 : r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(s.face, cx - r, cy - r, r * 2, r * 2);
+  } else if (!isCharacter(p.avatar)) {
+    ctx.font = `${Math.round(L.size * 0.5)}px ${EMOJI_FONT}`;
+    ctx.fillText(p.avatar, cx, cy + L.size * 0.04);
+  }
   ctx.restore();
 
   // card count bubble (gold "UNO!" once they've shouted with one card left)
@@ -187,11 +203,12 @@ function Avatar({ p, pub, small }: { p: PublicPlayer; pub: PublicView; small: bo
   const spectator = useGame((s) => s.spectator);
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const viewH = useThree((s) => s.size.height);
-  const crowded = small && pub.players.length >= 8;
-  const L = useMemo(() => chipLayout(small ? (crowded ? 34 : 40) : 54, small), [small, crowded]);
+  const size = chipSize(small, pub.players.length);
+  const L = useMemo(() => chipLayout(size, small), [size, small]);
 
   const turn = pub.phase === "playing" && pub.turnPlayerId === p.id;
-  const state: Omit<ChipState, "timer" | "ripple"> = {
+  const mood = useScene((st) => st.moods[p.id]);
+  const state: Omit<ChipState, "timer" | "ripple" | "face"> = {
     p,
     turn,
     online: p.isBot || presence.length === 0 || presence.includes(p.id),
@@ -222,11 +239,25 @@ function Avatar({ p, pub, small }: { p: PublicPlayer; pub: PublicView; small: bo
     [tex, mat],
   );
 
-  // repaint when anything shown changes; the active seat also repaints its timer below
-  const key = JSON.stringify(state) + L.size;
+  // repaint when anything shown changes; the active seat also repaints its timer below,
+  // and every seat repaints to blink now and then
+  const key = JSON.stringify(state) + L.size + (mood ?? "");
   const live = useRef(state);
+  const blinking = useRef(false);
+  const tick = useRef({ timer: 1, ripple: 0 });
   useLayoutEffect(() => {
     live.current = state;
+  });
+  const paint = useRef(() => {});
+  useLayoutEffect(() => {
+    paint.current = () => {
+      const m: Mood = useScene.getState().moods[p.id] ?? (blinking.current ? "blink" : "idle");
+      const px = Math.round(L.size * RES);
+      // until the mood's face is ready, show the resting one (and repaint once it loads)
+      const face = avatarBitmap(p.avatar, m, px, () => paint.current()) ?? avatarBitmap(p.avatar, "idle", px, () => paint.current());
+      paintChip(ctx, L, { ...live.current, ...tick.current, face });
+      tex.needsUpdate = true;
+    };
   });
   useEffect(() => {
     const w = W * RES;
@@ -237,11 +268,17 @@ function Avatar({ p, pub, small }: { p: PublicPlayer; pub: PublicView; small: bo
       // three allocates a texture's GPU storage once; a resized canvas would only overwrite part of it
       tex.dispose();
     }
-    paintChip(ctx, L, { ...live.current, timer: 1, ripple: 0 });
-    tex.needsUpdate = true;
-  }, [key, canvas, ctx, tex, L]);
+    tick.current = { timer: 1, ripple: 0 };
+    paint.current();
+  }, [key, canvas, tex, L]);
+  // a new expression pops the avatar a little
+  const popAt = useRef(-1);
+  useEffect(() => {
+    if (mood) popAt.current = performance.now();
+  }, [mood]);
 
   const lastPaint = useRef(0);
+  const nextBlink = useRef(performance.now() + 1500 + Math.random() * 4000);
   const scale = useRef(1);
   useFrame((st, dt) => {
     const s = sprite.current;
@@ -251,8 +288,12 @@ function Avatar({ p, pub, small }: { p: PublicPlayer; pub: PublicView; small: bo
     // fixed on-screen size: one layout px = this many units at distance 1
     const k = (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)) / Math.max(1, viewH);
     scale.current = THREE.MathUtils.damp(scale.current, live.current.turn ? 1.18 : 1, 10, dt);
-    s.scale.set(W * k * scale.current, L.h * k * scale.current, 1);
+    const now = performance.now();
+    const since = (now - popAt.current) / 450;
+    const pop = popAt.current >= 0 && since < 1 ? 1 + 0.16 * Math.sin(since * Math.PI) * (1 - since) : 1;
+    s.scale.set(W * k * scale.current * pop, L.h * k * scale.current * pop, 1);
     s.center.set(0.5, (L.h - L.cy) / L.h);
+    let repaint = false;
     if (live.current.turn && st.clock.elapsedTime - lastPaint.current > 1 / 15) {
       lastPaint.current = st.clock.elapsedTime;
       const g = useGame.getState().pub;
@@ -262,9 +303,15 @@ function Avatar({ p, pub, small }: { p: PublicPlayer; pub: PublicView; small: bo
         const total = Math.max(1, Math.min(g.deadline - g.turnStartedAt, turnMs || BOT_DELAY_MIN + BOT_DELAY_SPREAD));
         timer = Math.max(0, Math.min(1, (g.deadline - serverNow()) / total));
       }
-      paintChip(ctx, L, { ...live.current, timer, ripple: (st.clock.elapsedTime * 0.9) % 1 });
-      tex.needsUpdate = true;
+      tick.current = { timer, ripple: (st.clock.elapsedTime * 0.9) % 1 };
+      repaint = true;
     }
+    if (now > nextBlink.current) {
+      blinking.current = !blinking.current;
+      nextBlink.current = now + (blinking.current ? 140 : 2200 + Math.random() * 3800);
+      repaint ||= isCharacter(p.avatar) && !useScene.getState().moods[p.id];
+    }
+    if (repaint) paint.current();
   });
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {

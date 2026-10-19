@@ -19,6 +19,7 @@ import { shoutNow } from "@/scene/anim/director";
 import { sortHand, useUi, type Quality, type RoomTheme } from "./uiStore";
 import { CARD_HELP, RULE_HELP } from "./ruleInfo";
 import { anchors } from "./TableFx";
+import { Face } from "./Face";
 
 // ── top bar ──
 
@@ -491,8 +492,8 @@ export function BottomHud() {
             }}
           >
             {myTurn && <TurnPing />}
+            <Face avatar={me.avatar} pid={me.id} size={badge} alive />
             {myTurn && <TimerRing size={badge} color={color} />}
-            {me.avatar}
             <SeatFxStack pid={me.id} />
           </div>
           <div
@@ -689,7 +690,7 @@ export function ShoutBanner() {
               {last.kind === "shout" ? BRAND.shout : "🔨 CAUGHT!"}
             </div>
             <div className="mt-2 flex items-center gap-2 rounded-full bg-[#1d5fd6] px-4 py-1.5 text-sm font-bold ring-2 ring-white shadow-[0_3px_0_#133f99]">
-              <span className="text-lg">{who?.avatar}</span>
+              {who && <Face avatar={who.avatar} size={30} mood={last.kind === "shout" ? "wink" : "shock"} className="-my-1 -ml-2.5 ring-2 ring-white" />}
               {last.kind === "shout"
                 ? `${who?.id === you ? "You" : (who?.name ?? "Someone")} shouted ${BRAND.shout}`
                 : `${by?.id === you ? "You" : (by?.name ?? "Someone")} caught ${who?.id === you ? "you" : (who?.name ?? "someone")} — +${pub?.settings.unoPenalty ?? 2} cards`}

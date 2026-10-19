@@ -2,6 +2,7 @@
 
 import type { Action, Color } from "@/engine";
 import { api, ApiError } from "./api";
+import { randomAvatarId } from "./avatars";
 import { loadProfile } from "./profile";
 import { useGame } from "./store/game-store";
 
@@ -22,7 +23,7 @@ export async function takeSeat(): Promise<boolean> {
   const { code, you, pub, receive, toast } = useGame.getState();
   if (!code) return false;
   const w = pub?.spectators.find((s) => s.id === you);
-  const profile = loadProfile() ?? { name: w?.name ?? "Guest", avatar: w?.avatar ?? "🙂" };
+  const profile = loadProfile() ?? { name: w?.name ?? "Guest", avatar: w?.avatar ?? randomAvatarId() };
   try {
     receive(await api.join(code, profile));
     return true;

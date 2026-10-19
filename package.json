@@ -16,6 +16,9 @@
     "deploy": "node scripts/deploy.mjs"
   },
   "dependencies": {
+    "@dicebear/avataaars": "^9.4.2",
+    "@dicebear/bottts": "^9.4.2",
+    "@dicebear/core": "^9.4.3",
     "@neondatabase/serverless": "^1.2.0",
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.1",

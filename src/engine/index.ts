@@ -9,6 +9,6 @@ export * from "./view";
 export * from "./uno";
 export * from "./teams";
 export { applyAction, engineDebug, type ApplyResult } from "./reducer";
-export { decideBot, BOT_NAMES, BOT_AVATARS } from "./bots";
+export { decideBot, BOT_NAMES, botAvatar } from "./bots";
 export { cryptoRng, mulberry32 } from "./rng";
 export { handPoints } from "./scoring";

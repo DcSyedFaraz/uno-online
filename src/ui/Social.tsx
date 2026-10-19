@@ -8,6 +8,7 @@ import { sendChat } from "@/client/realtime/useRoom";
 import { playSfx } from "@/audio/sound";
 import { useScene } from "@/scene/sceneStore";
 import { EmoteButton, onFunMessage } from "./Fun";
+import { Face } from "./Face";
 
 /** Reactions float over the sender's seat; chat messages ding when the drawer is closed. */
 export function useSocialFx() {
@@ -86,7 +87,7 @@ export function ChatDock() {
                 const author = pub?.players.find((p) => p.id === m.pid);
                 return (
                   <div key={m.id} className={`flex gap-2 ${mine ? "flex-row-reverse" : ""}`}>
-                    <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white text-sm">{author?.avatar ?? "🙂"}</div>
+                    <Face avatar={author?.avatar ?? "🙂"} size={28} className="shadow-[0_2px_0_rgba(10,30,90,0.3)]" />
                     <div className={`max-w-[75%] rounded-2xl px-3 py-1.5 text-sm shadow-[0_2px_0_rgba(10,30,90,0.3)] ${mine ? "bg-accent text-white" : "bg-white text-ink"}`}>
                       {!mine && <div className="text-[10px] font-bold text-[#1d5fd6]">{playerName(pub, m.pid, you)}</div>}
                       <div className="break-words">{m.text}</div>

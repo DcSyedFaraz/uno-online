@@ -12,7 +12,7 @@ import { sendAction } from "@/client/actions";
 import { serverNow } from "@/client/clock";
 import { useGame } from "@/client/store/game-store";
 import { pileScreen, sceneRef, seatScreen, useScene, type FxTone } from "../sceneStore";
-import { AVATAR_LIFT, chipLayout } from "./SeatAvatars";
+import { AVATAR_LIFT, chipLayout, chipSize } from "./SeatAvatars";
 
 const isSmall = () => window.innerWidth < 640 || window.innerHeight < 520;
 
@@ -146,8 +146,7 @@ function Chip({ p }: { p: PublicPlayer }) {
   const pub = useGame((s) => s.pub!);
   const isTurn = pub.turnPlayerId === p.id && pub.phase === "playing";
   const small = useSmallScreen();
-  const crowded = small && pub.players.length >= 8;
-  const L = chipLayout(small ? (crowded ? 34 : 40) : 54, small);
+  const L = chipLayout(chipSize(small, pub.players.length), small);
   const top = L.cy * (isTurn ? 1.18 : 1);
 
   return (

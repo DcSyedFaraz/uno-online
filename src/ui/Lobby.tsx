@@ -10,6 +10,7 @@ import { sendAction } from "@/client/actions";
 import { useGame } from "@/client/store/game-store";
 import { playSfx } from "@/audio/sound";
 import { RulesPanel } from "./RulesPanel";
+import { Face } from "./Face";
 
 function ShareCard({ code }: { code: string }) {
   const [qr, setQr] = useState<string | null>(null);
@@ -102,7 +103,7 @@ export function Lobby() {
                 const from = nameOf(i.from);
                 return (
                   <div key={i.from} className="flex items-center gap-2 rounded-xl bg-white/20 px-2.5 py-1.5 text-xs font-semibold ring-2 ring-gold">
-                    <span className="text-base">{from?.avatar}</span>
+                    {from && <Face avatar={from.avatar} size={24} mood="happy" />}
                     <span className="min-w-0 flex-1 truncate">{from?.name} wants to team up</span>
                     <button className="btn btn-primary px-2.5 py-1 text-[11px]" onClick={() => void sendAction({ type: "team_accept", playerId: i.from })}>
                       Accept
@@ -133,8 +134,8 @@ export function Lobby() {
                     className={`group relative flex items-center gap-2.5 rounded-2xl bg-white/15 p-2.5 short:p-2 ${p.id === you ? "ring-[3px] ring-gold" : "ring-2 ring-white/20"}`}
                     style={tc ? { boxShadow: `inset 5px 0 0 ${tc}` } : undefined}
                   >
-                    <div className="relative grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-xl shadow-[0_2px_0_rgba(10,30,90,0.35)] short:h-9 short:w-9">
-                      {p.avatar}
+                    <div className="relative h-10 w-10 shrink-0 rounded-full shadow-[0_0_0_2px_#fff,0_2px_0_2px_rgba(10,30,90,0.35)] short:h-9 short:w-9">
+                      <Face avatar={p.avatar} pid={p.id} size={40} alive className="!h-full !w-full" />
                       <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white ${online ? "bg-neon-green" : "bg-[#9aa6c4]"}`} />
                     </div>
                     <div className="min-w-0">

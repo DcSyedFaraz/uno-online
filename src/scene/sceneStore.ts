@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { create } from "zustand";
 import { NEON } from "@/brand";
 import type { Card, Color } from "@/engine";
+import type { Mood } from "@/client/avatars";
 import type { CalloutSpec } from "./anim/callout";
 import type { Seat, TableDims } from "./layout/layout";
 import { tableDims } from "./layout/layout";
@@ -127,6 +128,9 @@ interface SceneStore {
   /** bumped when your turn starts (drives the YOUR TURN banner) */
   yourTurn: number;
   markYourTurn(delay?: number): void;
+  /** a player's face for a moment (avatars react to what happens to them) */
+  moods: Record<string, Mood>;
+  setMood(pid: string, mood: Mood, delay?: number, ms?: number): void;
 }
 
 export const useScene = create<SceneStore>((set, get) => ({
@@ -184,6 +188,23 @@ export const useScene = create<SceneStore>((set, get) => ({
   markYourTurn(delay = 0) {
     setTimeout(() => set({ yourTurn: ids++ }), delay);
   },
+  moods: {},
+  setMood(pid, mood, delay = 0, ms = 2400) {
+    setTimeout(() => {
+      const token = ids++;
+      moodTokens.set(pid, token);
+      set({ moods: { ...get().moods, [pid]: mood } });
+      setTimeout(() => {
+        if (moodTokens.get(pid) !== token) return;
+        const rest = { ...get().moods };
+        delete rest[pid];
+        set({ moods: rest });
+      }, ms);
+    }, delay);
+  },
 }));
+
+/** the latest mood per player, so an older one's timer doesn't clear a newer one */
+const moodTokens = new Map<string, number>();
 
 export const COLOR_HEX: Record<Color | "wild", string> = NEON;

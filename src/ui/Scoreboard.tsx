@@ -7,6 +7,7 @@ import { cardLabel } from "@/engine/cards";
 import { sendAction, takeSeat } from "@/client/actions";
 import { useGame } from "@/client/store/game-store";
 import { COLOR_HEX } from "@/scene/sceneStore";
+import { Face } from "./Face";
 
 const WILD_SWATCH = `conic-gradient(${COLOR_HEX.red},${COLOR_HEX.yellow},${COLOR_HEX.green},${COLOR_HEX.blue},${COLOR_HEX.red})`;
 
@@ -75,7 +76,11 @@ export function Scoreboard() {
             animate={{ y: 0, scale: 1, opacity: 1 }}
             transition={{ type: "spring", stiffness: 260, damping: 24 }}
           >
-            <div className="text-5xl short:text-3xl">{winner?.avatar ?? "🤝"}</div>
+            {winner ? (
+              <Face avatar={winner.avatar} size={84} mood="love" className="shadow-[0_0_0_4px_#fff,0_0_0_8px_#ffcf1a] short:!h-14 short:!w-14" />
+            ) : (
+              <div className="text-5xl short:text-3xl">🤝</div>
+            )}
             <div className="font-display toon-text mt-2 text-2xl font-black text-[#ffd84a] short:mt-1 short:text-xl">
               {!winner
                 ? "Round over"
@@ -105,7 +110,7 @@ export function Scoreboard() {
                     style={teamColor(pub, p.id) ? { boxShadow: `inset 5px 0 0 ${teamColor(pub, p.id)}` } : undefined}
                   >
                     <span className="w-4 text-xs font-bold text-white/75">{i + 1}</span>
-                    <span className="text-lg">{p.avatar}</span>
+                    <Face avatar={p.avatar} size={32} mood={won(p.id) ? "happy" : hand.length >= 8 ? "sad" : undefined} className="ring-2 ring-white" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold">
                         {p.name}

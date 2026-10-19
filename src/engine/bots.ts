@@ -10,7 +10,10 @@ export const BOT_NAMES = [
   "Nova", "Pixel", "Echo", "Blitz", "Orbit", "Volt", "Comet", "Zara", "Juno", "Rook",
   "Vega", "Neon", "Quark", "Ember", "Sable", "Flux", "Iris", "Kilo",
 ];
-export const BOT_AVATARS = ["🤖", "👾", "🦾", "🛸", "🧠", "⚡", "🔮", "🎲"];
+/** A robot avatar id (`b:<seed>`, drawn as a DiceBear "Bottts" robot by the client). */
+export function botAvatar(rng: () => number): string {
+  return `b:${Math.floor(rng() * 36 ** 6).toString(36)}`;
+}
 
 /** Most-held color among non-wild cards (random when there are none). */
 export function botColor(hand: Card[], rng: () => number): Color {
