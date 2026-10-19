@@ -2,16 +2,16 @@
 
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { easing } from "maath";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { Card, Color } from "@/engine";
 import { playCard } from "@/client/actions";
 import { useGame } from "@/client/store/game-store";
 import { useUi, sortHand } from "@/ui/uiStore";
 import { playSfx } from "@/audio/sound";
-import { cardFaceGeometry, cardGeometry, cardMaterials } from "./cardGeometry";
+import { borderMaterial, cardBorderGeometry, cardFaceGeometry, cardGeometry, cardMaterials } from "./cardGeometry";
 import { glowTexture } from "./glow";
-import { discardSlot, flatFaceDown, flatFaceUp, handSlot, PILE_SCALE, SEAT_CARD_SCALE, seatHandCenter, standingBack, type HandSlot } from "../layout/layout";
+import { discardSlot, flatFaceDown, flatFaceUp, handSlot, PILE_SCALE, PLAYABLE_LIFT, SEAT_CARD_SCALE, seatHandCenter, standingBack, type HandSlot } from "../layout/layout";
 import { actorTransforms, sceneRef, spawnHints, wildColors } from "../sceneStore";
 
 type Zone = "hand" | "discard" | "pending";
@@ -45,6 +45,8 @@ function CardActor({ card, zone, index, count, playable, selected, rejected, myT
   const group = useRef<THREE.Group>(null);
   const halo = useRef<THREE.Mesh>(null);
   const shade = useRef<THREE.Mesh>(null);
+  const border = useMemo(() => (zone === "hand" ? borderMaterial() : null), [zone]);
+  useEffect(() => () => border?.dispose(), [border]);
   const [hovered, setHovered] = useState(false);
   const materials = useMemo(() => cardMaterials(card, tint), [card, tint]);
   const sim = useRef({
@@ -57,6 +59,9 @@ function CardActor({ card, zone, index, count, playable, selected, rejected, myT
     d0: 0,
     roll: 0,
     down: null as null | { x: number; y: number; t: number },
+    /** when the current turn of yours began (for the little hop) */
+    hopAt: -1e9,
+    wasMyTurn: false,
   });
 
   // where does this card enter from?
@@ -106,7 +111,12 @@ function CardActor({ card, zone, index, count, playable, selected, rejected, myT
     let targetScale = 1;
     let smooth = 0.26;
     if (zone === "hand") {
-      const lift = rejected ? 0 : selected ? 0.34 : hovered ? 0.2 : playable && myTurn ? 0.06 : 0;
+      if (myTurn && !s.wasMyTurn) s.hopAt = now + index * 45;
+      s.wasMyTurn = myTurn;
+      // playable cards rise on your turn, with one little hop as it starts
+      const hopP = (now - s.hopAt) / 480;
+      const hop = playable && myTurn && hopP > 0 && hopP < 1 ? Math.sin(Math.PI * hopP) * 0.14 : 0;
+      const lift = rejected ? 0 : selected ? 0.34 : hovered ? 0.24 : playable && myTurn ? PLAYABLE_LIFT + hop : 0;
       handSlot(count, index, handParams(state), lift, slot);
       tmpPos.copy(slot.pos).applyMatrix4(cam.matrixWorld);
       euler.set(-0.08, 0, slot.rotZ);
@@ -161,13 +171,18 @@ function CardActor({ card, zone, index, count, playable, selected, rejected, myT
     if (halo.current && shade.current) {
       const m = halo.current.material as THREE.MeshBasicMaterial;
       const on = zone === "hand" && playable && myTurn;
-      const target = on ? (selected || hovered ? 0.95 : 0.6 + Math.sin(now / 340) * 0.12) : 0;
+      const target = on ? (selected || hovered ? 0.7 : 0.32 + Math.sin(now / 340) * 0.08) : 0;
       m.opacity = THREE.MathUtils.damp(m.opacity, target, 8, dt);
       halo.current.visible = m.opacity > 0.01;
       // dim cards you can't play while it's your turn
       const sm = shade.current.material as THREE.MeshBasicMaterial;
       sm.opacity = THREE.MathUtils.damp(sm.opacity, zone === "hand" && myTurn && !playable ? 0.2 : 0, 8, dt);
       shade.current.visible = sm.opacity > 0.01;
+    }
+    if (border) {
+      const u = border.uniforms;
+      u.uTime.value = now / 1000;
+      u.uOpacity.value = THREE.MathUtils.damp(u.uOpacity.value, zone === "hand" && playable && myTurn ? 1 : 0, 10, dt);
     }
   });
 
@@ -215,6 +230,7 @@ function CardActor({ card, zone, index, count, playable, selected, rejected, myT
             <planeGeometry args={[0.9, 1.2]} />
             <meshBasicMaterial map={glowTexture()} color={DROP_SHADOW} transparent opacity={0.34} depthWrite={false} />
           </mesh>
+          {border && <mesh geometry={cardBorderGeometry()} material={border} position={[0, 0, 0.0078]} />}
           <mesh ref={shade} geometry={cardFaceGeometry()} position={[0, 0, 0.0085]}>
             <meshBasicMaterial color="#2a1030" transparent opacity={0} depthWrite={false} />
           </mesh>

@@ -11,6 +11,8 @@ import { useRoom } from "@/client/realtime/useRoom";
 import { useGame } from "@/client/store/game-store";
 import { unlockAudio } from "@/audio/sound";
 import { useNeedsRotate } from "@/client/device";
+import { PileFxLayer, YourTurnBanner } from "./TableFx";
+import { EmoteLayer, ThrowLayer, ThrowMenu } from "./Fun";
 import { ActionCallout, BottomHud, ColorPicker, FullscreenButton, RulesSheet, SettingsSheet, ShoutBanner, SwapHint, Toasts, TopBar, TurnStatus, useKeyboard } from "./GameHud";
 import { useStoredProfile } from "./Landing";
 import { Lobby } from "./Lobby";
@@ -19,6 +21,7 @@ import { RotateGate } from "./RotateGate";
 import { Scoreboard } from "./Scoreboard";
 import { ChatDock, useSocialFx } from "./Social";
 import { SeatChips } from "@/scene/zones/SeatChips";
+import { Face } from "./Face";
 
 const GameCanvas = dynamic(() => import("@/scene/GameCanvas"), { ssr: false });
 const HeroCanvas = dynamic(() => import("@/scene/HeroCanvas"), { ssr: false });
@@ -52,15 +55,18 @@ function JoinCard({ code }: { code: string }) {
           <div className="text-xs font-bold uppercase tracking-[0.2em] text-white/70">You&apos;re invited to</div>
           <div className="font-display text-3xl font-black tracking-[0.18em]">{code}</div>
           {host && (
-            <div className="mt-1 text-sm text-white/80">
-              {host.avatar} {host.name}&apos;s table · {pub?.players.filter((p) => p.status !== "left").length}/10 players
+            <div className="mt-1 flex items-center justify-center gap-1.5 text-sm text-white/80">
+              <Face avatar={host.avatar} size={22} />
+              {host.name}&apos;s table · {pub?.players.filter((p) => p.status !== "left").length}/10 players
             </div>
           )}
-          {pub?.phase === "playing" && <div className="mt-2 text-xs font-semibold text-[#ffe48a]">A round is in progress — you can join when it ends.</div>}
+          {pub?.phase === "playing" && (
+            <div className="mt-2 text-xs font-semibold text-[#ffe48a]">A round is in progress: watch it now (you&apos;ll see every hand) and take a seat when it ends.</div>
+          )}
         </div>
         <ProfileForm value={profile} onChange={setProfile} autoFocus />
         <button className="btn btn-primary font-display mt-5 w-full py-3.5" disabled={busy || !profile.name.trim()} onClick={join}>
-          {busy ? "Joining…" : "Join table"}
+          {busy ? "Joining…" : pub?.phase === "playing" ? "Watch the game" : "Join table"}
         </button>
         {error && <div className="mt-3 rounded-lg bg-white px-3 py-2 text-center text-sm font-semibold text-neon-red">{error}</div>}
       </motion.div>
@@ -77,6 +83,11 @@ function InGame() {
       <TurnStatus />
       <BottomHud />
       <ActionCallout />
+      <PileFxLayer />
+      <YourTurnBanner />
+      <EmoteLayer />
+      <ThrowLayer />
+      <ThrowMenu />
       <ShoutBanner />
       <SwapHint />
       <ColorPicker />

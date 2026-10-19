@@ -35,6 +35,10 @@ export const clientActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("start") }),
   z.object({ type: z.literal("next_round") }),
   z.object({ type: z.literal("back_to_lobby") }),
+  z.object({ type: z.literal("team_invite"), playerId: id }),
+  z.object({ type: z.literal("team_accept"), playerId: id }),
+  z.object({ type: z.literal("team_decline"), playerId: id }),
+  z.object({ type: z.literal("team_leave") }),
 ]) as unknown as z.ZodType<Action>;
 
 export async function readJson<T>(req: Request, schema: z.ZodType<T>): Promise<T> {

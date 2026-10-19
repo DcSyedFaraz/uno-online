@@ -2,7 +2,8 @@ import { jumpInCardIds, needsColor, needsSwapTarget, playableCardIds } from "./l
 import type { RuleSettings } from "./rules";
 import { currentPlayer, findPlayer } from "./state";
 import { canCallUno } from "./uno";
-import type { Card, Color, GameEvent, GameState, Phase, PlayerStatus, RoundResult, UnoWindow } from "./types";
+import { partnerOf, teamPlay } from "./teams";
+import type { Card, Color, GameEvent, GameState, Phase, PlayerStatus, RoundResult, Spectator, TeamInvite, UnoWindow } from "./types";
 
 export interface PublicPlayer {
   id: string;
@@ -14,13 +15,19 @@ export interface PublicPlayer {
   saidUno: boolean;
   status: PlayerStatus;
   autopilot: boolean;
+  /** a bot is playing this seat for the human */
+  takenOver: boolean;
+  /** …because their connection dropped */
+  offline: boolean;
+  /** team play partner */
+  partnerId: string | null;
 }
 
 export type PublicTurn =
   | { kind: "play" }
   | { kind: "drawn" }
   | { kind: "stack"; challengeable: boolean }
-  | { kind: "choose_color"; purpose: "start" | "roulette" };
+  | { kind: "choose_color"; purpose: "roulette" };
 
 /** What everyone in the room may see. Hands and the draw order stay on the server. */
 export interface PublicView {
@@ -48,6 +55,8 @@ export interface PublicView {
   roundEndsAt: number | null;
   lastRound: RoundResult | null;
   gameWinnerId: string | null;
+  spectators: Spectator[];
+  invites: TeamInvite[];
 }
 
 /** What only one player may see. */
@@ -68,6 +77,10 @@ export interface PrivateView {
   canChallenge: boolean;
   canCallUno: boolean;
   mustChooseColor: boolean;
+  /** watching, not playing */
+  spectator?: boolean;
+  /** other hands this viewer may see: every hand for spectators, the partner's in team play */
+  peek?: Record<string, Card[]>;
 }
 
 const DISCARD_VISIBLE = 10;
@@ -96,6 +109,9 @@ export function publicView(state: GameState): PublicView {
       saidUno: p.saidUno,
       status: p.status,
       autopilot: p.autopilot,
+      takenOver: !!p.takenOver,
+      offline: !!p.offline,
+      partnerId: teamPlay(state) ? (p.partnerId ?? null) : null,
     })),
     discardTop: state.discardPile.slice(-DISCARD_VISIBLE),
     discardCount: state.discardPile.length,
@@ -114,6 +130,8 @@ export function publicView(state: GameState): PublicView {
     roundEndsAt: state.roundEndsAt ?? null,
     lastRound: state.phase === "playing" ? null : state.lastRound,
     gameWinnerId: state.gameWinnerId,
+    spectators: state.spectators ?? [],
+    invites: state.invites ?? [],
   };
 }
 
@@ -134,7 +152,14 @@ export function privateView(state: GameState, playerId: string): PrivateView {
     canCallUno: false,
     mustChooseColor: false,
   };
-  if (!p) return empty;
+  if (!p) {
+    // spectators see every hand
+    if (!state.spectators?.some((s) => s.id === playerId)) return empty;
+    const peek: Record<string, Card[]> = {};
+    for (const q of state.players) if (q.status === "active") peek[q.id] = q.hand;
+    return { ...empty, spectator: true, peek };
+  }
+  const partner = partnerOf(state, p);
   const myTurn = state.phase === "playing" && p.status === "active" && currentPlayer(state)?.id === p.id;
   const t = state.turn;
   const playable = playableCardIds(state, p);
@@ -155,10 +180,12 @@ export function privateView(state: GameState, playerId: string): PrivateView {
     canChallenge: myTurn && t.kind === "stack" && !!t.challenge,
     canCallUno: canCallUno({ state }, p),
     mustChooseColor: myTurn && t.kind === "choose_color",
+    ...(partner && state.phase === "playing" && partner.status === "active" ? { peek: { [partner.id]: partner.hand } } : {}),
   };
 }
 
-/** Hides drawn cards from everyone except the player who drew them. */
-export function eventsFor(events: GameEvent[], playerId: string): GameEvent[] {
+/** Hides drawn cards from everyone except the player who drew them (spectators see everything). */
+export function eventsFor(events: GameEvent[], playerId: string, revealAll = false): GameEvent[] {
+  if (revealAll) return events;
   return events.map((e) => (e.t === "draw" && e.pid !== playerId && e.cards ? { ...e, cards: undefined } : e));
 }

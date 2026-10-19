@@ -6,17 +6,17 @@ import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { BRAND } from "@/brand";
 import { api, ApiError, type Profile } from "@/client/api";
-import { AVATARS, loadProfile, randomName, saveProfile } from "@/client/profile";
+import { loadProfile, randomName, saveProfile, STARTER_AVATARS } from "@/client/profile";
 import { unlockAudio } from "@/audio/sound";
 import { ProfileForm } from "./ProfileForm";
 
 const HeroCanvas = dynamic(() => import("@/scene/HeroCanvas"), { ssr: false });
 
 export function useStoredProfile() {
-  const [profile, setProfile] = useState<Profile>({ name: "", avatar: AVATARS[0] });
+  const [profile, setProfile] = useState<Profile>({ name: "", avatar: STARTER_AVATARS[0] });
   useEffect(() => {
     // the profile lives in localStorage, which is only readable after mount
-    const stored = loadProfile() ?? { name: randomName(), avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)] };
+    const stored = loadProfile() ?? { name: randomName(), avatar: STARTER_AVATARS[Math.floor(Math.random() * STARTER_AVATARS.length)] };
     queueMicrotask(() => setProfile(stored));
   }, []);
   return [profile, setProfile] as const;

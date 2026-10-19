@@ -11,6 +11,8 @@ export const ruleSettingsSchema = z.object({
   /** round time limit in minutes (0 = off); at time-up the fewest card points wins */
   roundTimerMin: z.union([z.literal(0), z.literal(3), z.literal(5), z.literal(7)]),
   winMode: z.enum(["single", "points"]),
+  /** 2v2 pairs: partners sit opposite, see each other's cards, and win together */
+  teamPlay: z.boolean(),
   targetPoints: z.number().int().min(100).max(2000),
   deckCount: z.union([z.literal("auto"), z.literal(1), z.literal(2), z.literal(3)]),
 
@@ -46,6 +48,7 @@ export const CLASSIC_SETTINGS: RuleSettings = {
   turnTimerSec: 30,
   roundTimerMin: 0,
   winMode: "single",
+  teamPlay: false,
   targetPoints: 500,
   deckCount: "auto",
 
@@ -81,7 +84,7 @@ export const DEFAULT_SETTINGS: RuleSettings = {
 };
 
 /** Settings keys that are "basic" (not part of the More rules panel). */
-const BASIC_KEYS = ["handSize", "turnTimerSec", "roundTimerMin", "winMode", "targetPoints", "deckCount"] as const;
+const BASIC_KEYS = ["handSize", "turnTimerSec", "roundTimerMin", "winMode", "teamPlay", "targetPoints", "deckCount"] as const;
 
 /** Partial update schema used by the host's update_settings action. */
 export const settingsPatchSchema = ruleSettingsSchema

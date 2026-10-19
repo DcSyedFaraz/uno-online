@@ -19,6 +19,8 @@ interface UiStore {
   roomTheme: RoomTheme;
   settingsOpen: boolean;
   rulesOpen: boolean;
+  /** the opponent whose avatar was tapped (opens the throw menu) */
+  throwTarget: string | null;
   setSort(m: SortMode): void;
   setQuality(q: Quality): void;
   stepDownAutoTier(): void;
@@ -26,6 +28,7 @@ interface UiStore {
   setRoomTheme(t: RoomTheme): void;
   setSettingsOpen(o: boolean): void;
   setRulesOpen(o: boolean): void;
+  setThrowTarget(pid: string | null): void;
 }
 
 const ROOMS: RoomTheme[] = ["lounge", "casino", "living"];
@@ -44,6 +47,7 @@ export const useUi = create<UiStore>((set) => ({
   roomTheme: storedRoom(),
   settingsOpen: false,
   rulesOpen: false,
+  throwTarget: null,
   setSort(sortMode) {
     savePref("sort", sortMode);
     set({ sortMode });
@@ -69,6 +73,9 @@ export const useUi = create<UiStore>((set) => ({
   },
   setRulesOpen(rulesOpen) {
     set({ rulesOpen });
+  },
+  setThrowTarget(throwTarget) {
+    set({ throwTarget });
   },
 }));
 

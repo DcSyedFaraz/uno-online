@@ -4,12 +4,13 @@ import { AnimatePresence, motion } from "motion/react";
 import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { MAX_PLAYERS } from "@/engine";
+import { MAX_PLAYERS, teamColor } from "@/engine";
 import { BRAND } from "@/brand";
 import { sendAction } from "@/client/actions";
 import { useGame } from "@/client/store/game-store";
 import { playSfx } from "@/audio/sound";
 import { RulesPanel } from "./RulesPanel";
+import { Face } from "./Face";
 
 function ShareCard({ code }: { code: string }) {
   const [qr, setQr] = useState<string | null>(null);
@@ -72,6 +73,11 @@ export function Lobby() {
   };
   const seats = pub.players.filter((p) => p.status !== "left");
   const full = seats.length >= MAX_PLAYERS;
+  const teams = pub.settings.teamPlay;
+  const me = seats.find((p) => p.id === you);
+  const incoming = teams ? pub.invites.filter((i) => i.to === you && !me?.partnerId) : [];
+  const teamsReady = !teams || (seats.length >= 4 && seats.length % 2 === 0);
+  const nameOf = (id: string) => seats.find((p) => p.id === id);
   const [starting, setStarting] = useState(false);
 
   return (
@@ -90,10 +96,34 @@ export function Lobby() {
               </button>
             )}
           </div>
+          {/* invitations to team up: accept one, the rest go away */}
+          {incoming.length > 0 && (
+            <div className="mb-2 space-y-1.5">
+              {incoming.map((i) => {
+                const from = nameOf(i.from);
+                return (
+                  <div key={i.from} className="flex items-center gap-2 rounded-xl bg-white/20 px-2.5 py-1.5 text-xs font-semibold ring-2 ring-gold">
+                    {from && <Face avatar={from.avatar} size={24} mood="happy" />}
+                    <span className="min-w-0 flex-1 truncate">{from?.name} wants to team up</span>
+                    <button className="btn btn-primary px-2.5 py-1 text-[11px]" onClick={() => void sendAction({ type: "team_accept", playerId: i.from })}>
+                      Accept
+                    </button>
+                    <button className="grid h-6 w-6 place-items-center rounded-full bg-[#14213d]/50 text-[11px]" aria-label="Decline" onClick={() => void sendAction({ type: "team_decline", playerId: i.from })}>
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <AnimatePresence>
               {seats.map((p) => {
                 const online = p.isBot || presence.length === 0 || presence.includes(p.id);
+                const tc = teamColor(pub, p.id);
+                const partner = p.partnerId ? nameOf(p.partnerId) : undefined;
+                const invited = pub.invites.some((i) => i.from === you && i.to === p.id);
+                const canInvite = teams && p.id !== you && !p.partnerId && !me?.partnerId;
                 return (
                   <motion.div
                     key={p.id}
@@ -102,9 +132,10 @@ export function Lobby() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.85 }}
                     className={`group relative flex items-center gap-2.5 rounded-2xl bg-white/15 p-2.5 short:p-2 ${p.id === you ? "ring-[3px] ring-gold" : "ring-2 ring-white/20"}`}
+                    style={tc ? { boxShadow: `inset 5px 0 0 ${tc}` } : undefined}
                   >
-                    <div className="relative grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-xl shadow-[0_2px_0_rgba(10,30,90,0.35)] short:h-9 short:w-9">
-                      {p.avatar}
+                    <div className="relative h-10 w-10 shrink-0 rounded-full shadow-[0_0_0_2px_#fff,0_2px_0_2px_rgba(10,30,90,0.35)] short:h-9 short:w-9">
+                      <Face avatar={p.avatar} pid={p.id} size={40} alive className="!h-full !w-full" />
                       <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white ${online ? "bg-neon-green" : "bg-[#9aa6c4]"}`} />
                     </div>
                     <div className="min-w-0">
@@ -112,7 +143,33 @@ export function Lobby() {
                         {p.name}
                         {p.id === you && <span className="text-white/70"> (you)</span>}
                       </div>
-                      <div className="text-[11px] text-white/75">{p.id === pub.hostId ? "👑 Host" : p.isBot ? "🤖 Bot" : "Guest"}</div>
+                      <div className="truncate text-[11px] text-white/75">
+                        {partner ? (
+                          <span style={{ color: tc ?? undefined }} className="font-bold">
+                            with {partner.name}
+                          </span>
+                        ) : p.id === pub.hostId ? (
+                          "👑 Host"
+                        ) : p.isBot ? (
+                          "🤖 Bot"
+                        ) : (
+                          "Guest"
+                        )}
+                      </div>
+                      {teams && p.id === you && p.partnerId && (
+                        <button className="text-[10px] font-bold text-white/80 underline" onClick={() => void sendAction({ type: "team_leave" })}>
+                          Leave team
+                        </button>
+                      )}
+                      {canInvite && (
+                        <button
+                          className="mt-0.5 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-black text-ink disabled:opacity-60"
+                          disabled={invited}
+                          onClick={() => void sendAction({ type: "team_invite", playerId: p.id })}
+                        >
+                          {invited ? "Invited ✓" : "+ Invite"}
+                        </button>
+                      )}
                     </div>
                     {isHost && p.id !== you && (
                       <button
@@ -140,7 +197,7 @@ export function Lobby() {
             <>
               <button
                 className="btn btn-primary font-display w-full max-w-sm py-4 text-lg tracking-wide short:py-2.5 short:text-base"
-                disabled={seats.length < 2 || starting}
+                disabled={seats.length < 2 || !teamsReady || starting}
                 onClick={async () => {
                   setStarting(true);
                   playSfx("shuffle");
@@ -150,7 +207,15 @@ export function Lobby() {
               >
                 {starting ? "Shuffling…" : "Start game"}
               </button>
-              <div className="text-xs text-white/75">{seats.length < 2 ? "Invite a friend or add a bot to start." : "Everyone's in? Deal 'em."}</div>
+              <div className="text-xs text-white/75">
+                {seats.length < 2
+                  ? "Invite a friend or add a bot to start."
+                  : !teamsReady
+                    ? "Team play needs an even number of players (4–10)."
+                    : teams
+                      ? "Anyone without a partner gets one at random."
+                      : "Everyone's in? Deal 'em."}
+              </div>
             </>
           ) : (
             <div className="flex items-center gap-3 text-sm font-semibold text-white/90">

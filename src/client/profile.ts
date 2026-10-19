@@ -1,10 +1,12 @@
 "use client";
 
 import type { Profile } from "./api";
+import { isCharacter, randomAvatarId } from "./avatars";
 
 const KEY = "neono_profile";
 
-export const AVATARS = ["😎", "🦊", "🐼", "🐸", "🦄", "🐯", "👻", "🤠", "🧛", "🐙", "🦖", "🐵", "🐧", "🦉", "🐲", "🍕"];
+/** Hand-picked characters the avatar picker starts with (🎲 deals new ones). */
+export const STARTER_AVATARS = ["neono1", "neono4", "neono6", "neono10", "neono17", "neono19", "neono23", "neono24", "neono33", "neono36", "neono38"].map((s) => `h:${s}`);
 
 const ADJ = ["Neon", "Lucky", "Cosmic", "Turbo", "Sneaky", "Wild", "Swift", "Mystic", "Hyper", "Chill"];
 const NOUN = ["Fox", "Comet", "Panda", "Wizard", "Rocket", "Tiger", "Ghost", "Ninja", "Otter", "Falcon"];
@@ -19,7 +21,9 @@ export function loadProfile(): Profile | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const p = JSON.parse(raw) as Profile;
-    return typeof p.name === "string" && typeof p.avatar === "string" ? p : null;
+    if (typeof p.name !== "string" || typeof p.avatar !== "string") return null;
+    // emoji avatars were retired: give old profiles a character
+    return isCharacter(p.avatar) ? p : { ...p, avatar: randomAvatarId() };
   } catch {
     return null;
   }

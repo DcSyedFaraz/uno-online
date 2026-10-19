@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { create } from "zustand";
 import { NEON } from "@/brand";
 import type { Card, Color } from "@/engine";
+import type { Mood } from "@/client/avatars";
 import type { CalloutSpec } from "./anim/callout";
 import type { Seat, TableDims } from "./layout/layout";
 import { tableDims } from "./layout/layout";
@@ -42,6 +43,21 @@ export interface SeatFx {
   big?: boolean;
 }
 
+/** A big animated glyph over the discard pile when an action or wild card lands. */
+export interface PileFx {
+  id: number;
+  kind: "skip" | "skip_all" | "reverse" | "draw" | "wild" | "discard_all" | "roulette";
+  /** text on the badge (+2, +4, ALL…) */
+  label: string;
+  /** badge colour */
+  color: string;
+  /** picked colour for wilds */
+  picked: string | null;
+  /** seats it then flies to (skipped player, whoever draws) */
+  targets: string[];
+  direction: 1 | -1;
+}
+
 export interface Pulse {
   id: number;
   kind: "shockwave" | "burst" | "colorburst";
@@ -50,6 +66,11 @@ export interface Pulse {
   born: number;
   delay: number;
 }
+
+/** Where each seat's avatar is on screen (CSS px), updated every frame by SeatProjector. */
+export const seatScreen = new Map<string, { x: number; y: number }>();
+/** Where the discard pile is on screen (CSS px), updated every frame by SeatProjector. */
+export const pileScreen = { x: 0, y: 0 };
 
 /** Shared mutable layout data read inside useFrame (no React re-renders). */
 export const sceneRef: {
@@ -101,6 +122,15 @@ interface SceneStore {
   addPulse(kind: Pulse["kind"], pos: THREE.Vector3, color: string, delay?: number): void;
   removePulse(id: number): void;
   celebrate(big: boolean): void;
+  pileFx: PileFx[];
+  addPileFx(fx: Omit<PileFx, "id">, delay?: number): void;
+  removePileFx(id: number): void;
+  /** bumped when your turn starts (drives the YOUR TURN banner) */
+  yourTurn: number;
+  markYourTurn(delay?: number): void;
+  /** a player's face for a moment (avatars react to what happens to them) */
+  moods: Record<string, Mood>;
+  setMood(pid: string, mood: Mood, delay?: number, ms?: number): void;
 }
 
 export const useScene = create<SceneStore>((set, get) => ({
@@ -147,6 +177,34 @@ export const useScene = create<SceneStore>((set, get) => ({
   celebrate(big) {
     set({ confetti: { id: ids++, big } });
   },
+  pileFx: [],
+  addPileFx(fx, delay = 0) {
+    setTimeout(() => set({ pileFx: [...get().pileFx.slice(-2), { ...fx, id: ids++ }] }), delay);
+  },
+  removePileFx(id) {
+    set({ pileFx: get().pileFx.filter((f) => f.id !== id) });
+  },
+  yourTurn: 0,
+  markYourTurn(delay = 0) {
+    setTimeout(() => set({ yourTurn: ids++ }), delay);
+  },
+  moods: {},
+  setMood(pid, mood, delay = 0, ms = 2400) {
+    setTimeout(() => {
+      const token = ids++;
+      moodTokens.set(pid, token);
+      set({ moods: { ...get().moods, [pid]: mood } });
+      setTimeout(() => {
+        if (moodTokens.get(pid) !== token) return;
+        const rest = { ...get().moods };
+        delete rest[pid];
+        set({ moods: rest });
+      }, ms);
+    }, delay);
+  },
 }));
+
+/** the latest mood per player, so an older one's timer doesn't clear a newer one */
+const moodTokens = new Map<string, number>();
 
 export const COLOR_HEX: Record<Color | "wild", string> = NEON;

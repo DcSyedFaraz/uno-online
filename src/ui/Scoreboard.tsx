@@ -2,11 +2,12 @@
 
 import { AnimatePresence, animate, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { handPoints } from "@/engine";
+import { handPoints, MAX_PLAYERS, teamColor } from "@/engine";
 import { cardLabel } from "@/engine/cards";
-import { sendAction } from "@/client/actions";
+import { sendAction, takeSeat } from "@/client/actions";
 import { useGame } from "@/client/store/game-store";
 import { COLOR_HEX } from "@/scene/sceneStore";
+import { Face } from "./Face";
 
 const WILD_SWATCH = `conic-gradient(${COLOR_HEX.red},${COLOR_HEX.yellow},${COLOR_HEX.green},${COLOR_HEX.blue},${COLOR_HEX.red})`;
 
@@ -25,23 +26,32 @@ function CountUp({ to }: { to: number }) {
   return <span ref={ref}>0</span>;
 }
 
+/** Long enough to see the last card land and the "OUT!" moment before the results cover the table. */
+const SCOREBOARD_DELAY = 3200;
+
 export function Scoreboard() {
   const pub = useGame((s) => s.pub);
   const you = useGame((s) => s.you);
+  const spectating = useGame((s) => s.spectator);
   const over = pub?.phase === "round_over" || pub?.phase === "game_over";
   const key = over ? `${pub?.phase}:${pub?.round}` : null;
   const [readyFor, setReadyFor] = useState<string | null>(null);
   // let the last card land before covering the table
   useEffect(() => {
     if (!key) return;
-    const t = setTimeout(() => setReadyFor(key), 1300);
+    const t = setTimeout(() => setReadyFor(key), SCOREBOARD_DELAY);
     return () => clearTimeout(t);
   }, [key]);
   const show = key !== null && readyFor === key;
   if (!pub || !pub.lastRound) return null;
   const lr = pub.lastRound;
   const winner = pub.players.find((p) => p.id === lr.winnerId);
+  // team play: the winner's partner wins too
+  const teams = pub.settings.teamPlay;
+  const partner = teams && winner?.partnerId ? pub.players.find((p) => p.id === winner.partnerId) : undefined;
+  const won = (id: string | null) => !!id && (id === winner?.id || id === partner?.id);
   const isHost = pub.hostId === you;
+  const seatFree = spectating && pub.players.filter((p) => p.status !== "left").length < MAX_PLAYERS && !(teams && pub.phase === "round_over");
   const gameOver = pub.phase === "game_over";
   const points = pub.settings.winMode === "points";
   const left = (id: string) => lr.hands[id] ?? [];
@@ -51,6 +61,7 @@ export function Scoreboard() {
     .sort((a, b) => {
       if (points) return b.score - a.score;
       if (a.id === lr.winnerId || b.id === lr.winnerId) return a.id === lr.winnerId ? -1 : 1;
+      if (won(a.id) !== won(b.id)) return won(a.id) ? -1 : 1;
       const byCount = left(a.id).length - left(b.id).length;
       return lr.timeUp ? handPoints(left(a.id)) - handPoints(left(b.id)) || byCount : byCount;
     });
@@ -65,9 +76,23 @@ export function Scoreboard() {
             animate={{ y: 0, scale: 1, opacity: 1 }}
             transition={{ type: "spring", stiffness: 260, damping: 24 }}
           >
-            <div className="text-5xl short:text-3xl">{winner?.avatar ?? "🤝"}</div>
+            {winner ? (
+              <Face avatar={winner.avatar} size={84} mood="love" className="shadow-[0_0_0_4px_#fff,0_0_0_8px_#ffcf1a] short:!h-14 short:!w-14" />
+            ) : (
+              <div className="text-5xl short:text-3xl">🤝</div>
+            )}
             <div className="font-display toon-text mt-2 text-2xl font-black text-[#ffd84a] short:mt-1 short:text-xl">
-              {winner ? (winner.id === you ? (gameOver ? "You win the game!" : "You win the round!") : `${winner.name} wins${gameOver ? " the game" : ""}!`) : "Round over"}
+              {!winner
+                ? "Round over"
+                : partner
+                  ? won(you)
+                    ? `Your team wins${gameOver ? " the game" : ""}!`
+                    : `${winner.name} & ${partner.name} win${gameOver ? " the game" : ""}!`
+                  : winner.id === you
+                    ? gameOver
+                      ? "You win the game!"
+                      : "You win the round!"
+                    : `${winner.name} wins${gameOver ? " the game" : ""}!`}
             </div>
             {lr.timeUp && <div className="mt-1 text-sm font-semibold text-gold">⏱ Time&apos;s up: the fewest card points wins</div>}
             {points && winner && (
@@ -79,13 +104,18 @@ export function Scoreboard() {
               {ranked.map((p, i) => {
                 const hand = lr.hands[p.id] ?? [];
                 return (
-                  <div key={p.id} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${p.id === lr.winnerId ? "bg-white/25 ring-[3px] ring-gold" : "bg-white/12"}`}>
+                  <div
+                    key={p.id}
+                    className={`flex items-center gap-3 rounded-xl px-3 py-2 ${won(p.id) ? "bg-white/25 ring-[3px] ring-gold" : "bg-white/12"}`}
+                    style={teamColor(pub, p.id) ? { boxShadow: `inset 5px 0 0 ${teamColor(pub, p.id)}` } : undefined}
+                  >
                     <span className="w-4 text-xs font-bold text-white/75">{i + 1}</span>
-                    <span className="text-lg">{p.avatar}</span>
+                    <Face avatar={p.avatar} size={32} mood={won(p.id) ? "happy" : hand.length >= 8 ? "sad" : undefined} className="ring-2 ring-white" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold">
                         {p.name}
                         {p.id === you && <span className="text-white/75"> (you)</span>}
+                        {p.takenOver && <span className="text-white/75"> · 🤖 played for them</span>}
                       </div>
                       <div className="flex flex-wrap gap-0.5">
                         {hand.slice(0, 18).map((c) => (
@@ -129,7 +159,14 @@ export function Scoreboard() {
                   </>
                 )
               ) : (
-                <div className="text-sm font-semibold text-white/85">Waiting for the host…</div>
+                <>
+                  {seatFree && (
+                    <button className="btn btn-primary font-display" onClick={() => void takeSeat()}>
+                      Take a seat
+                    </button>
+                  )}
+                  <div className="w-full text-sm font-semibold text-white/85">Waiting for the host…</div>
+                </>
               )}
             </div>
           </motion.div>

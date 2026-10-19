@@ -13,7 +13,7 @@ import {
   type GameState,
 } from "@/engine";
 import { gameChannel, type GameMessage, type RoomSnapshot } from "@/shared/protocol";
-import { publishAll, transport, type OutboundMessage } from "./realtime";
+import { presentIds, publishAll, transport, type OutboundMessage } from "./realtime";
 import { getStore, type RoomRecord } from "./store";
 
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -38,13 +38,16 @@ export interface Profile {
   avatar: string;
 }
 
+const isSpectator = (state: GameState, pid: string) => !!state.spectators?.some((s) => s.id === pid);
+const isMember = (state: GameState, pid: string) => state.players.some((p) => p.id === pid) || isSpectator(state, pid);
+
 function messageFor(state: GameState, version: number, pid: string, res: ApplyResult | null, now: number): GameMessage {
-  const member = state.players.some((p) => p.id === pid);
+  const member = isMember(state, pid);
   return {
     v: version,
     pub: publicView(state),
     priv: member ? privateView(state, pid) : null,
-    ev: res ? eventsFor(res.events, pid) : [],
+    ev: res ? eventsFor(res.events, pid, isSpectator(state, pid)) : [],
     now,
     removed: !member || undefined,
   };
@@ -71,7 +74,7 @@ export async function loadRoom(code: string): Promise<RoomRecord> {
 export async function snapshot(code: string, pid: string): Promise<RoomSnapshot> {
   const rec = await loadRoom(code);
   const msg = messageFor(rec.state, rec.version, pid, null, Date.now());
-  return { code, you: pid, member: !msg.removed, transport: transport(), msg };
+  return { code, you: pid, member: !msg.removed, spectator: isSpectator(rec.state, pid), transport: transport(), msg };
 }
 
 /**
@@ -119,9 +122,34 @@ export async function tick(code: string): Promise<{ applied: boolean; v: number 
   }
 }
 
+/**
+ * A player's connection dropped. Any member may report it, but the server only acts if presence
+ * confirms they're really gone: then a bot takes their seat (or they leave the lobby).
+ */
+export async function markOffline(code: string, reporter: string, target: string, present = presentIds): Promise<{ applied: boolean }> {
+  const rec = await loadRoom(code);
+  if (!isMember(rec.state, reporter)) throw new HttpError(403, "Not in this room");
+  let here: Set<string>;
+  try {
+    here = await present(code);
+  } catch {
+    return { applied: false };
+  }
+  if (here.has(target)) return { applied: false };
+  try {
+    await perform(code, "system", { type: "offline", playerId: target });
+    return { applied: true };
+  } catch (e) {
+    if (e instanceof HttpError && (e.status === 400 || e.status === 409)) return { applied: false };
+    throw e;
+  }
+}
+
 async function broadcast(code: string, prev: GameState, res: ApplyResult, version: number, now: number) {
+  // humans, including seats a bot is minding for them, and everyone watching
   const humans = new Set<string>();
-  for (const p of [...prev.players, ...res.state.players]) if (!p.isBot) humans.add(p.id);
+  for (const p of [...prev.players, ...res.state.players]) if (!p.isBot || p.takenOver) humans.add(p.id);
+  for (const s of [...(prev.spectators ?? []), ...(res.state.spectators ?? [])]) humans.add(s.id);
   const out: OutboundMessage[] = [...humans].map((pid) => ({
     channel: gameChannel(code, pid),
     name: "game",

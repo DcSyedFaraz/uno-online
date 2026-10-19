@@ -2,6 +2,7 @@ import { drawValue, isWild } from "./cards";
 import { needsColor, needsSwapTarget, playBlocker } from "./legal";
 import { pick } from "./rng";
 import { activePlayers, currentPlayer, findPlayer, nextActivePlayer } from "./state";
+import { sameTeam } from "./teams";
 import { catchableTarget, canCallUno } from "./uno";
 import { COLORS, type Action, type Card, type Color, type GameState, type PlayerState } from "./types";
 
@@ -9,7 +10,10 @@ export const BOT_NAMES = [
   "Nova", "Pixel", "Echo", "Blitz", "Orbit", "Volt", "Comet", "Zara", "Juno", "Rook",
   "Vega", "Neon", "Quark", "Ember", "Sable", "Flux", "Iris", "Kilo",
 ];
-export const BOT_AVATARS = ["🤖", "👾", "🦾", "🛸", "🧠", "⚡", "🔮", "🎲"];
+/** A robot avatar id (`b:<seed>`, drawn as a DiceBear "Bottts" robot by the client). */
+export function botAvatar(rng: () => number): string {
+  return `b:${Math.floor(rng() * 36 ** 6).toString(36)}`;
+}
 
 /** Most-held color among non-wild cards (random when there are none). */
 export function botColor(hand: Card[], rng: () => number): Color {
@@ -27,11 +31,13 @@ export function botColor(hand: Card[], rng: () => number): Color {
   return best.length ? pick(best, rng) : pick(COLORS, rng);
 }
 
-/** Swap with whoever has the fewest cards. */
+/** Swap with whoever has the fewest cards (an opponent, in team play). */
 export function botSwapTarget(state: GameState, player: PlayerState): string {
   const others = activePlayers(state).filter((p) => p.id !== player.id);
-  others.sort((a, b) => a.hand.length - b.hand.length);
-  return others[0].id;
+  const rivals = others.filter((p) => !sameTeam(state, p, player));
+  const pool = rivals.length ? rivals : others;
+  pool.sort((a, b) => a.hand.length - b.hand.length);
+  return pool[0].id;
 }
 
 /** Fills in the color / swap target a play needs. */
@@ -53,7 +59,8 @@ export function completePlay(
 
 function scoreCard(state: GameState, player: PlayerState, card: Card, favorite: Color): number {
   const next = nextActivePlayer(state);
-  const threat = next.hand.length <= 2;
+  const friend = sameTeam(state, next, player);
+  const threat = !friend && next.hand.length <= 2;
   let score: number;
   switch (card.kind) {
     case "number":
@@ -82,7 +89,10 @@ function scoreCard(state: GameState, player: PlayerState, card: Card, favorite: 
     default:
       score = 14;
   }
-  if (threat && (drawValue(card) > 0 || card.kind === "skip" || card.kind === "reverse" || card.kind === "skip_all")) score += 20;
+  const hits = drawValue(card) > 0 || card.kind === "skip" || card.kind === "reverse" || card.kind === "skip_all";
+  if (threat && hits) score += 20;
+  // go easy on your partner
+  if (friend && hits && card.kind !== "reverse") score -= 15;
   if (card.color === favorite) score += 3;
   if (card.kind === "number" && card.value === 7 && state.settings.sevenSwap) {
     const fewest = Math.min(...activePlayers(state).filter((p) => p.id !== player.id).map((p) => p.hand.length));

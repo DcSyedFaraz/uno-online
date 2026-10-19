@@ -7,11 +7,12 @@ import * as THREE from "three";
 import type { PublicPlayer } from "@/engine";
 import { UNO_CATCH_GRACE_MS, UNO_WINDOW_MS } from "@/engine/uno";
 import { BOT_DELAY_MIN, BOT_DELAY_SPREAD } from "@/engine/state";
-import { BRAND, NEON } from "@/brand";
-import { playCard, sendAction } from "@/client/actions";
+import { NEON } from "@/brand";
+import { sendAction } from "@/client/actions";
 import { serverNow } from "@/client/clock";
 import { useGame } from "@/client/store/game-store";
-import { COLOR_HEX, sceneRef, useScene, type FxTone } from "../sceneStore";
+import { pileScreen, sceneRef, seatScreen, useScene, type FxTone } from "../sceneStore";
+import { AVATAR_LIFT, chipLayout, chipSize } from "./SeatAvatars";
 
 const isSmall = () => window.innerWidth < 640 || window.innerHeight < 520;
 
@@ -81,11 +82,7 @@ export function TurnPing() {
 
 /** Bouncing pointer above the active player. */
 function TurnArrow() {
-  return (
-    <div className="font-display toon-text pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 animate-bounce text-lg leading-none text-[#ffd84a]">
-      ▼
-    </div>
-  );
+  return <div className="font-display toon-text pointer-events-none animate-bounce text-lg leading-none text-[#ffd84a]">▼</div>;
 }
 
 export function SeatFxStack({ pid }: { pid: string }) {
@@ -134,25 +131,23 @@ function CatchButton({ pid }: { pid: string }) {
         e.stopPropagation();
         void sendAction({ type: "catch_uno", targetId: pid });
       }}
-      className="hidden absolute -bottom-9 left-1/2 -translate-x-1/2 rounded-full bg-neon-red px-3 py-1 text-xs font-black text-white ring-2 ring-white shadow-[0_3px_0_#7d0710] animate-bounce"
+      className="hidden whitespace-nowrap rounded-full bg-neon-red px-3 py-1 text-xs font-black text-white ring-2 ring-white shadow-[0_3px_0_#7d0710] animate-bounce"
     >
       🔨 CATCH!
     </button>
   );
 }
 
+/**
+ * The DOM layer over an opponent's 3D avatar (see SeatAvatars): things that must stay on top
+ * and clickable. Positioned on the avatar circle's centre every frame by <SeatProjector/>.
+ */
 function Chip({ p }: { p: PublicPlayer }) {
   const pub = useGame((s) => s.pub!);
-  const presence = useGame((s) => s.presence);
-  const picker = useGame((s) => s.picker);
   const isTurn = pub.turnPlayerId === p.id && pub.phase === "playing";
-  const online = p.isBot || presence.length === 0 || presence.includes(p.id);
-  const color = pub.currentColor ? COLOR_HEX[pub.currentColor] : COLOR_HEX.wild;
-  const swapPick = picker?.kind === "swap" && p.status === "active";
-  const out = p.status !== "active" && pub.phase === "playing";
   const small = useSmallScreen();
-  const crowded = small && pub.players.length >= 8;
-  const size = small ? (crowded ? 34 : 40) : 54;
+  const L = chipLayout(chipSize(small, pub.players.length), small);
+  const top = L.cy * (isTurn ? 1.18 : 1);
 
   return (
     <div
@@ -163,55 +158,15 @@ function Chip({ p }: { p: PublicPlayer }) {
       className="absolute left-0 top-0 will-change-transform"
       style={{ transform: "translate3d(-9999px,-9999px,0)" }}
     >
-      <div
-        className={`relative flex -translate-x-1/2 -translate-y-1/2 flex-col items-center select-none transition-[opacity,scale] duration-300 ${out ? "opacity-40" : ""} ${isTurn ? "scale-[1.18]" : ""}`}
-        style={{ pointerEvents: swapPick ? "auto" : "none" }}
-        onClick={() => swapPick && void playCard(picker.cardId, { swapTargetId: p.id, color: picker.color as never })}
-      >
-        <SeatFxStack pid={p.id} />
-        {isTurn && <TurnArrow />}
-        <div
-          className={`relative grid place-items-center rounded-full transition-all duration-300 ${swapPick ? "cursor-pointer animate-pulse" : ""}`}
-          style={{
-            width: size,
-            height: size,
-            background: "radial-gradient(circle at 35% 30%, #ffffff, #d4e4ff)",
-            boxShadow: swapPick
-              ? `0 0 0 3px #ffffff, 0 0 0 7px ${NEON.wild}, 0 6px 16px rgba(60,0,10,0.45)`
-              : isTurn
-                ? TURN_SHADOW
-                : "0 0 0 3px #ffffff, 0 4px 0 rgba(10,40,110,0.35), 0 6px 14px rgba(60,0,10,0.4)",
-          }}
-        >
-          {isTurn && <TurnPing />}
-          {isTurn && <TimerRing size={size} color={color} />}
-          <span className={`leading-none ${small ? (crowded ? "text-[17px]" : "text-[20px]") : "text-[26px]"}`} style={{ filter: online ? "none" : "grayscale(1)" }}>
-            {p.avatar}
-          </span>
-          {pub.phase === "playing" && p.status === "active" && (
-            <span
-              className="absolute -right-2 -top-1 min-w-[22px] rounded-full px-1.5 text-center text-[11px] font-black leading-[20px] text-[#14213d] ring-2 ring-[#14213d]/15"
-              style={{ background: p.cardCount === 1 ? "#ffcf1a" : "#ffffff", boxShadow: "0 2px 0 rgba(20,33,61,0.35)" }}
-            >
-              {p.cardCount}
-            </span>
-          )}
-          {p.id === pub.hostId && <span className="absolute -left-1.5 -top-2 text-sm">👑</span>}
+      <div className="pointer-events-none relative select-none">
+        {/* above the avatar's name pill */}
+        <div className="absolute left-0 flex -translate-x-1/2 flex-col items-center" style={{ bottom: top - 2 }}>
+          {isTurn && <TurnArrow />}
         </div>
-        <div
-          className={`mt-1.5 truncate rounded-full px-2 py-0.5 font-bold ring-2 ring-white/80 ${isTurn ? "bg-gold text-ink shadow-[0_2px_0_#a87400]" : "bg-[#1d5fd6] text-white shadow-[0_2px_0_#133f99]"} ${small ? (crowded ? "max-w-[58px] text-[9px]" : "max-w-[84px] text-[10px]") : "max-w-[110px] text-[11px]"}`}
-        >
-          {p.isBot && !crowded ? "🤖 " : ""}
-          {p.name}
-          {p.autopilot ? " · away" : ""}
-          {!online ? " · offline" : ""}
+        <div className="absolute left-0" style={{ top: -top }}>
+          <SeatFxStack pid={p.id} />
         </div>
-        {pub.settings.winMode === "points" && <div className="toon-text text-[10px] font-bold text-white">{p.score} pts</div>}
-        {p.saidUno && p.cardCount === 1 && (
-          <div className="font-display mt-0.5 text-[11px] font-black text-[#ffd84a] toon-text">{BRAND.shout}</div>
-        )}
-        {out && <div className="font-display mt-0.5 rounded-full bg-[#14213d] px-1.5 text-[10px] font-black text-white">{p.status === "left" ? "LEFT" : "OUT"}</div>}
-        <div style={{ pointerEvents: "auto" }}>
+        <div className="absolute" style={{ left: L.size / 2 + 8, top: -12, pointerEvents: "auto" }}>
           <CatchButton pid={p.id} />
         </div>
       </div>
@@ -223,19 +178,30 @@ function Chip({ p }: { p: PublicPlayer }) {
 const chipEls = new Map<string, HTMLElement>();
 const v = new THREE.Vector3();
 
-/** Inside the canvas: projects each seat to the screen and moves its DOM chip there. */
+/**
+ * Inside the canvas: projects each seat's avatar (see SeatAvatars) to the screen, moves its DOM
+ * chip there, and records it in `seatScreen` for things that fly between seats.
+ */
 export function SeatProjector() {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   useFrame(() => {
-    for (const [pid, el] of chipEls) {
-      const seat = sceneRef.seats.get(pid);
-      if (!seat) continue;
-      v.copy(seat.chip).project(camera);
+    for (const [pid, seat] of sceneRef.seats) {
+      v.copy(seat.chip).setY(seat.chip.y + AVATAR_LIFT).project(camera);
       const x = (v.x * 0.5 + 0.5) * size.width;
       const y = (-v.y * 0.5 + 0.5) * size.height;
-      el.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`;
+      const at = seatScreen.get(pid);
+      if (at) {
+        at.x = x;
+        at.y = y;
+      } else seatScreen.set(pid, { x, y });
+      const el = chipEls.get(pid);
+      if (el) el.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`;
     }
+    // just above the propped-up top card of the discard pile
+    v.copy(sceneRef.dims.discard).setY(0.55).project(camera);
+    pileScreen.x = (v.x * 0.5 + 0.5) * size.width;
+    pileScreen.y = (-v.y * 0.5 + 0.5) * size.height;
   });
   return null;
 }

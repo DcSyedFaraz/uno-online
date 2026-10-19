@@ -2,11 +2,13 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { REACTIONS, CHAT_MAX } from "@/shared/protocol";
+import { CHAT_MAX } from "@/shared/protocol";
 import { playerName, useGame } from "@/client/store/game-store";
 import { sendChat } from "@/client/realtime/useRoom";
 import { playSfx } from "@/audio/sound";
 import { useScene } from "@/scene/sceneStore";
+import { EmoteButton, onFunMessage } from "./Fun";
+import { Face } from "./Face";
 
 /** Reactions float over the sender's seat; chat messages ding when the drawer is closed. */
 export function useSocialFx() {
@@ -17,36 +19,10 @@ export function useSocialFx() {
     seen.current = chat.length;
     for (const m of fresh) {
       if (m.kind === "react") useScene.getState().addSeatFx(m.pid, m.text, "white", true);
+      else if (m.kind === "emote" || m.kind === "throw") onFunMessage(m);
       else if (m.pid !== useGame.getState().you) playSfx("chat");
     }
   }, [chat]);
-}
-
-export function ReactionBar() {
-  const [cool, setCool] = useState(false);
-  const send = (emoji: string) => {
-    if (cool) return;
-    setCool(true);
-    setTimeout(() => setCool(false), 900);
-    void sendChat("react", emoji);
-  };
-  return (
-    <div className="flex gap-1">
-      {REACTIONS.map((r) => (
-        <motion.button
-          key={r}
-          whileTap={{ scale: 1.35 }}
-          whileHover={{ y: -3 }}
-          disabled={cool}
-          onClick={() => send(r)}
-          className="grid h-9 w-9 place-items-center rounded-xl bg-white/20 text-lg ring-2 ring-white/40 transition disabled:opacity-50 short:h-8 short:w-8"
-          aria-label={`React ${r}`}
-        >
-          {r}
-        </motion.button>
-      ))}
-    </div>
-  );
 }
 
 export function ChatDock() {
@@ -57,6 +33,7 @@ export function ChatDock() {
   const chat = useMemo(() => all.filter((m) => m.kind === "chat"), [all]);
   const pub = useGame((s) => s.pub);
   const you = useGame((s) => s.you);
+  const spectator = useGame((s) => s.spectator);
   const [text, setText] = useState("");
   const list = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -77,7 +54,7 @@ export function ChatDock() {
       className={`fixed right-[max(0.75rem,env(safe-area-inset-right))] z-40 flex flex-col items-end gap-2 ${pub?.phase === "lobby" ? "top-4 short:top-2" : "top-16 sm:top-20 short:top-[52px]"}`}
     >
       <div className="flex items-center gap-2">
-        <div className="hidden lg:block">{pub?.phase !== "lobby" && <ReactionBar />}</div>
+        {pub?.phase !== "lobby" && !spectator && <EmoteButton />}
         <button
           className="glass relative grid h-11 w-11 place-items-center !rounded-xl text-lg short:h-9 short:w-9 short:text-base"
           onClick={() => setOpen(!open)}
@@ -110,7 +87,7 @@ export function ChatDock() {
                 const author = pub?.players.find((p) => p.id === m.pid);
                 return (
                   <div key={m.id} className={`flex gap-2 ${mine ? "flex-row-reverse" : ""}`}>
-                    <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white text-sm">{author?.avatar ?? "🙂"}</div>
+                    <Face avatar={author?.avatar ?? "🙂"} size={28} className="shadow-[0_2px_0_rgba(10,30,90,0.3)]" />
                     <div className={`max-w-[75%] rounded-2xl px-3 py-1.5 text-sm shadow-[0_2px_0_rgba(10,30,90,0.3)] ${mine ? "bg-accent text-white" : "bg-white text-ink"}`}>
                       {!mine && <div className="text-[10px] font-bold text-[#1d5fd6]">{playerName(pub, m.pid, you)}</div>}
                       <div className="break-words">{m.text}</div>
@@ -118,9 +95,6 @@ export function ChatDock() {
                   </div>
                 );
               })}
-            </div>
-            <div className="border-t border-white/20 p-2 lg:hidden">
-              <ReactionBar />
             </div>
             <form onSubmit={submit} className="flex gap-2 border-t border-white/20 p-2">
               <input className="input py-2 text-sm" value={text} maxLength={CHAT_MAX} onChange={(e) => setText(e.target.value)} placeholder="Message…" />

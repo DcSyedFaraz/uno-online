@@ -6,6 +6,8 @@ export const RULE_HELP = {
   turnTimerSec: "If a player doesn't move in time they automatically draw a card (or take the penalty).",
   roundTimerMin:
     "The longest a round can last. When time runs out, whoever holds the fewest card points wins (numbers count face value, action cards 20, wilds 50). In the last minute the turn timer halves and bots play twice as fast.",
+  teamPlay:
+    "Play in pairs (up to 5 teams). Partners sit opposite each other, see each other's cards, and win together when either one goes out. Invite a partner in the lobby; anyone left over is paired up at the start.",
   winMode: "Single round: first to empty their hand wins. Points: the winner scores everyone else's leftover cards; first to the target wins.",
   deckCount: "Auto adds a second deck for big tables (7+ players) and a third for huge hands.",
   stacking:

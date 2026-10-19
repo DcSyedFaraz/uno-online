@@ -58,6 +58,19 @@ export function devPresence(code: string, connId: string, pid: string | null) {
   devPublish(ch, "presence", { kind: "presence", members: [...new Set(room.values())] });
 }
 
+/** Who is connected to the room right now (Ably presence, or the dev bus). */
+export async function presentIds(code: string): Promise<Set<string>> {
+  const client = ably();
+  if (!client) return new Set(devBus().presence.get(chatChannel(code))?.values() ?? []);
+  const ids = new Set<string>();
+  let page: Ably.PaginatedResult<Ably.PresenceMessage> | null = await client.channels.get(chatChannel(code)).presence.get();
+  while (page) {
+    for (const m of page.items) if (m.clientId) ids.add(m.clientId);
+    page = page.hasNext() ? await page.next() : null;
+  }
+  return ids;
+}
+
 /** Sends every message; on Ably this is a single batch HTTP call. */
 export async function publishAll(messages: OutboundMessage[]) {
   if (messages.length === 0) return;

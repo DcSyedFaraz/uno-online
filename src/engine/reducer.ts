@@ -1,6 +1,6 @@
 import { ZodError } from "zod";
 import { drawValue, isWild } from "./cards";
-import { BOT_AVATARS, BOT_NAMES, botColor, completePlay, decideBot } from "./bots";
+import { botAvatar, BOT_NAMES, botColor, completePlay, decideBot } from "./bots";
 import { discardMatching, EFFECTS, takePenalty } from "./effects";
 import { assertRule, RuleError } from "./errors";
 import { jumpInBlocker, matchesForPlayer, needsColor, needsSwapTarget, playBlocker } from "./legal";
@@ -20,6 +20,7 @@ import {
   setTurn,
   takeFromPile,
 } from "./state";
+import { arrangeTeams, clearTeams, invitesOf, pair, teamPlay, unpair } from "./teams";
 import { callUno, catchUno, expireUnoWindow } from "./uno";
 import { COLORS, type Action, type Card, type Color, type Ctx, type GameEvent, type GameState, type PlayerState } from "./types";
 
@@ -65,9 +66,16 @@ function dispatch(ctx: Ctx, action: Action, actorId: string) {
       return join(ctx, actorId, action.name, action.avatar);
     case "timeout":
       return onTimeout(ctx);
+    case "offline":
+      return goOffline(ctx, action.playerId);
   }
 
   const actor = findPlayer(state, actorId);
+  if (!actor && state.spectators?.some((s) => s.id === actorId)) {
+    assertRule(action.type === "leave", "Spectators can watch, not play");
+    state.spectators = state.spectators.filter((s) => s.id !== actorId);
+    return;
+  }
   assertRule(actor, "You're not in this room");
 
   switch (action.type) {
@@ -80,6 +88,7 @@ function dispatch(ctx: Ctx, action: Action, actorId: string) {
         if (e instanceof ZodError) throw new RuleError("Invalid settings");
         throw e;
       }
+      if (!state.settings.teamPlay) clearTeams(state);
       ctx.events.push({ t: "settings" });
       return;
     case "add_bot":
@@ -89,6 +98,8 @@ function dispatch(ctx: Ctx, action: Action, actorId: string) {
       requireNotPlaying(state);
       const bot = findPlayer(state, action.playerId);
       assertRule(bot?.isBot, "That's not a bot");
+      assertRule(!(teamPlay(state) && state.phase === "round_over"), "The teams are set until this game ends");
+      unpair(state, bot);
       state.players = state.players.filter((p) => p.id !== bot.id);
       ctx.events.push({ t: "player_left", pid: bot.id });
       return;
@@ -98,7 +109,7 @@ function dispatch(ctx: Ctx, action: Action, actorId: string) {
       assertRule(action.playerId !== actor.id, "You can't kick yourself");
       const target = findPlayer(state, action.playerId);
       assertRule(target, "Player not found");
-      return removePlayer(ctx, target);
+      return removePlayer(ctx, target, true);
     }
     case "leave":
       return removePlayer(ctx, actor);
@@ -118,6 +129,7 @@ function dispatch(ctx: Ctx, action: Action, actorId: string) {
       requireHost(state, actor);
       assertRule(state.phase === "lobby" || state.phase === "game_over", "The game has already started");
       state.players = state.players.filter((p) => !p.takenOver);
+      if (teamPlay(state)) arrangeTeams(ctx);
       for (const p of state.players) p.score = 0;
       state.round = 0;
       state.dealerIndex = -1;
@@ -131,7 +143,15 @@ function dispatch(ctx: Ctx, action: Action, actorId: string) {
       requireHost(state, actor);
       assertRule(state.phase === "round_over" || state.phase === "game_over", "Finish the round first");
       return backToLobby(ctx);
+    case "team_invite":
+    case "team_accept":
+    case "team_decline":
+    case "team_leave":
+      return teamAction(ctx, actor, action);
   }
+
+  // a human whose seat a bot took over (they went offline) gets it back by playing
+  if (actor.takenOver) reclaim(ctx, actor);
 
   // ── in-game actions ──
   if (!actor.isBot) markHumanActivity(ctx, actor);
@@ -196,13 +216,7 @@ function gameAction(ctx: Ctx, actor: PlayerState, action: Action) {
     case "choose_color":
       assertRule(turn.kind === "choose_color", "You don't need to pick a color now");
       assertRule(COLORS.includes(action.color), "Pick a valid color");
-      if (turn.purpose === "start") {
-        state.currentColor = action.color;
-        ctx.events.push({ t: "color", pid: actor.id, color: action.color });
-        setTurn(ctx, state.turnIndex);
-      } else {
-        roulette(ctx, actor, action.color);
-      }
+      roulette(ctx, actor, action.color);
       return;
   }
   throw new RuleError("Unknown action");
@@ -388,18 +402,18 @@ function safeMove(ctx: Ctx, p: PlayerState) {
   if (state.phase === "playing" && currentPlayer(state) === p && state.turn.kind === "drawn") advanceTurn(ctx, 1);
 }
 
+const MAX_SPECTATORS = 20;
+
+/**
+ * Join or rejoin. A returning player gets their seat back (from the bot, if one took over).
+ * Someone new joins as a player when there's a free seat between rounds; otherwise
+ * (mid-round, a full table, or between rounds of a team game) they watch as a spectator.
+ */
 function join(ctx: Ctx, id: string, name: string, avatar: string) {
   const { state } = ctx;
   const existing = findPlayer(state, id);
   if (existing) {
-    if (existing.takenOver) {
-      // back from a leave: take the seat (and hand) back from the bot
-      existing.takenOver = false;
-      existing.isBot = false;
-      existing.autopilot = false;
-      existing.afkStrikes = 0;
-      if (state.phase === "playing" && currentPlayer(state) === existing) scheduleDeadline(ctx);
-    }
+    if (existing.takenOver) reclaim(ctx, existing);
     if (existing.status === "left") {
       assertRule(state.phase !== "playing", "You left this round — you can rejoin when it ends");
       existing.status = "active";
@@ -411,10 +425,114 @@ function join(ctx: Ctx, id: string, name: string, avatar: string) {
     }
     return;
   }
-  assertRule(state.phase !== "playing", "A round is in progress — you can join when it ends");
-  assertRule(state.players.filter((p) => p.status !== "left").length < MAX_PLAYERS, "This room is full");
-  state.players.push(newPlayer({ id, name, avatar }));
-  ctx.events.push({ t: "player_joined", pid: id });
+  const spectators = (state.spectators ??= []);
+  const watching = spectators.find((s) => s.id === id);
+  const full = state.players.filter((p) => p.status !== "left").length >= MAX_PLAYERS;
+  const canSit = state.phase === "lobby" || state.phase === "game_over" || (state.phase === "round_over" && !teamPlay(state));
+  if (canSit && !full) {
+    state.spectators = spectators.filter((s) => s.id !== id);
+    state.players.push(newPlayer({ id, name, avatar }));
+    ctx.events.push({ t: "player_joined", pid: id });
+    return;
+  }
+  if (watching) {
+    watching.name = name;
+    watching.avatar = avatar;
+    return;
+  }
+  assertRule(spectators.length < MAX_SPECTATORS, "This table has too many spectators right now");
+  spectators.push({ id, name, avatar });
+  ctx.events.push({ t: "spectator_joined", pid: id });
+}
+
+/** Gives a taken-over seat (and its hand) back to the human. */
+function reclaim(ctx: Ctx, p: PlayerState) {
+  assertRule(!p.kicked, "The host removed you from this game");
+  p.takenOver = false;
+  p.offline = false;
+  p.isBot = false;
+  p.autopilot = false;
+  p.afkStrikes = 0;
+  if (ctx.state.phase === "playing" && currentPlayer(ctx.state) === p) scheduleDeadline(ctx);
+}
+
+/**
+ * A player's connection is gone (the server checked presence). During a game a bot plays
+ * for them until they're back; in the lobby they simply leave the table. Spectators go.
+ */
+function goOffline(ctx: Ctx, playerId: string) {
+  const { state } = ctx;
+  if (state.spectators?.some((s) => s.id === playerId)) {
+    state.spectators = state.spectators.filter((s) => s.id !== playerId);
+    return;
+  }
+  const p = findPlayer(state, playerId);
+  assertRule(p && !p.isBot && p.status !== "left", "Nothing to do");
+  if (state.phase === "lobby") {
+    removePlayer(ctx, p);
+    return;
+  }
+  takeOver(ctx, p);
+  p.offline = true;
+  ctx.events.push({ t: "player_offline", pid: p.id });
+  passHost(ctx, p);
+}
+
+/** A bot takes the seat and the hand; `start` (a new game) drops it, rejoining gives it back. */
+function takeOver(ctx: Ctx, p: PlayerState) {
+  p.isBot = true;
+  p.takenOver = true;
+  p.autopilot = false;
+  if (ctx.state.phase === "playing" && currentPlayer(ctx.state) === p) scheduleDeadline(ctx);
+}
+
+function passHost(ctx: Ctx, from: PlayerState) {
+  const { state } = ctx;
+  if (state.hostId !== from.id) return;
+  const next = state.players.find((p) => !p.isBot && p.status !== "left" && p.id !== from.id);
+  if (next) {
+    state.hostId = next.id;
+    ctx.events.push({ t: "host_changed", pid: next.id });
+  }
+}
+
+/** Team play, in the lobby: invite someone, accept or decline an invite, or split up. */
+function teamAction(ctx: Ctx, actor: PlayerState, action: Extract<Action, { type: "team_invite" | "team_accept" | "team_decline" | "team_leave" }>) {
+  const { state } = ctx;
+  assertRule(teamPlay(state), "Team play is off in this room");
+  assertRule(state.phase === "lobby" || state.phase === "game_over", "Teams are picked before the game starts");
+  const invites = invitesOf(state);
+  if (action.type === "team_leave") {
+    assertRule(actor.partnerId, "You're not on a team");
+    unpair(state, actor);
+    ctx.events.push({ t: "settings" });
+    return;
+  }
+  const other = findPlayer(state, action.playerId);
+  assertRule(other && other !== actor && other.status !== "left", "Player not found");
+  switch (action.type) {
+    case "team_invite":
+      assertRule(!actor.partnerId, "You already have a partner");
+      assertRule(!other.partnerId, `${other.name} already has a partner`);
+      // bots always say yes
+      if (other.isBot) return pair(ctx, actor, other);
+      // they already asked you: that's a yes
+      if (invites.some((i) => i.from === other.id && i.to === actor.id)) return pair(ctx, actor, other);
+      if (!invites.some((i) => i.from === actor.id && i.to === other.id)) invites.push({ from: actor.id, to: other.id });
+      ctx.events.push({ t: "team_invite", from: actor.id, to: other.id });
+      return;
+    case "team_accept":
+      assertRule(
+        invites.some((i) => i.from === other.id && i.to === actor.id),
+        "That invitation is gone",
+      );
+      assertRule(!actor.partnerId && !other.partnerId, "One of you already has a partner");
+      return pair(ctx, actor, other);
+    case "team_decline":
+      state.invites = invites.filter((i) => !(i.from === other.id && i.to === actor.id));
+      ctx.events.push({ t: "settings" });
+      return;
+  }
 }
 
 function addBot(ctx: Ctx, actor: PlayerState) {
@@ -426,43 +544,40 @@ function addBot(ctx: Ctx, actor: PlayerState) {
   const free = BOT_NAMES.filter((n) => !used.has(n));
   const name = free.length ? pick(free, ctx.rng) : `Bot ${state.players.length + 1}`;
   const id = `bot_${Math.floor(ctx.rng() * 2 ** 32).toString(36)}`;
-  state.players.push(newPlayer({ id, name, avatar: pick(BOT_AVATARS, ctx.rng) }, true));
+  state.players.push(newPlayer({ id, name, avatar: botAvatar(ctx.rng) }, true));
   ctx.events.push({ t: "player_joined", pid: id });
 }
 
-function removePlayer(ctx: Ctx, target: PlayerState) {
+function removePlayer(ctx: Ctx, target: PlayerState, kicked = false) {
   const { state } = ctx;
-  if (state.phase === "playing") {
+  // a team game between rounds keeps the seat too, so the teams stay whole
+  const midGame = state.phase === "playing" || (state.phase === "round_over" && teamPlay(state));
+  if (midGame) {
     if (target.status === "active" && !target.isBot) {
       // leaving mid-game: a bot takes over the seat and the hand
-      target.isBot = true;
-      target.takenOver = true;
-      target.autopilot = false;
+      takeOver(ctx, target);
+      if (kicked) target.kicked = true;
       ctx.events.push({ t: "player_left", pid: target.id });
-      if (currentPlayer(state) === target) scheduleDeadline(ctx);
-    } else if (target.status === "active") {
+    } else if (target.status === "active" && state.phase === "playing") {
       eliminate(ctx, target, "left");
-    } else {
+    } else if (target.status !== "active") {
       target.status = "left";
       ctx.events.push({ t: "player_left", pid: target.id });
     }
     settle(ctx);
   } else {
+    unpair(state, target);
     state.players = state.players.filter((p) => p.id !== target.id);
     ctx.events.push({ t: "player_left", pid: target.id });
   }
-  if (state.hostId === target.id) {
-    const next = state.players.find((p) => !p.isBot && p.status !== "left" && p.id !== target.id);
-    if (next) {
-      state.hostId = next.id;
-      ctx.events.push({ t: "host_changed", pid: next.id });
-    }
-  }
+  passHost(ctx, target);
 }
 
 function backToLobby(ctx: Ctx) {
   const { state } = ctx;
   state.players = state.players.filter((p) => p.status !== "left" && !p.takenOver);
+  const ids = new Set(state.players.map((p) => p.id));
+  for (const p of state.players) if (p.partnerId && !ids.has(p.partnerId)) p.partnerId = null;
   for (const p of state.players) {
     p.hand = [];
     p.score = 0;
