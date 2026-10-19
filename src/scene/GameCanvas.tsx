@@ -14,13 +14,14 @@ import { CameraRig } from "./CameraRig";
 import { Confetti, Pulses } from "./fx/Fx";
 import { cameraFov, computeSeats, handTopPx, tableDims } from "./layout/layout";
 import { Room } from "./room/Room";
-import { actorTransforms, sceneRef } from "./sceneStore";
+import { actorTransforms, sceneRef, seatScreen, useScene } from "./sceneStore";
 import { STAGE, Table } from "./Table";
 import { Backs } from "./zones/Backs";
 import { DeckTarget } from "./zones/DeckTarget";
 import { Ghosts } from "./zones/Ghosts";
+import { SeatAvatars } from "./zones/SeatAvatars";
 import { SeatProjector } from "./zones/SeatChips";
-import { TurnMarker } from "./zones/TurnMarker";
+import { TurnBaton, TurnMarker } from "./zones/TurnMarker";
 
 type Tier = "high" | "medium" | "low";
 
@@ -100,12 +101,14 @@ function World() {
       <Room d={d} seats={seats} />
       <Table d={d} />
       <TurnMarker />
+      <TurnBaton />
       <Backs />
       <DeckTarget />
       <CardActors />
       <Ghosts />
       <Pulses />
       <Confetti />
+      <SeatAvatars />
       <SeatProjector />
     </>
   );
@@ -123,7 +126,7 @@ export default function GameCanvas({ paused = false }: { paused?: boolean }) {
     refreshTexturesWhenFontsReady();
     if (process.env.NODE_ENV !== "production") {
       const w = window as unknown as { __neono?: object };
-      w.__neono = { ...w.__neono, sceneRef, useGame, useUi, actorTransforms };
+      w.__neono = { ...w.__neono, sceneRef, useGame, useUi, useScene, actorTransforms, seatScreen };
     }
   }, []);
   return (

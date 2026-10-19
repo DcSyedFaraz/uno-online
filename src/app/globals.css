@@ -83,6 +83,11 @@ body {
   }
 
   /* the warm vignette over the 3D stage (static, cheap) */
+  /* your turn: the gold frame breathes so it's hard to miss */
+  .turn-frame {
+    animation: turn-breathe 2.2s ease-in-out infinite;
+  }
+
   .stage-vignette {
     background: radial-gradient(ellipse 78% 72% at 50% 45%, transparent 60%, rgba(40, 8, 14, 0.2) 100%);
   }
@@ -196,5 +201,17 @@ body {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes turn-breathe {
+  0%,
+  100% {
+    filter: brightness(1);
+    opacity: 1;
+  }
+  50% {
+    filter: brightness(1.25);
+    opacity: 0.6;
   }
 }

@@ -117,6 +117,55 @@ export function cardFaceGeometry(): THREE.ShapeGeometry {
   return (faceShape ??= new THREE.ShapeGeometry(roundedShape(CARD_W, CARD_H, RADIUS), CORNER_SEGMENTS));
 }
 
+let border: THREE.ShapeGeometry | null = null;
+/** A thin ring hugging the card's edge (the running border on playable cards). */
+export function cardBorderGeometry(): THREE.ShapeGeometry {
+  if (border) return border;
+  const m = 0.044;
+  const outer = roundedShape(CARD_W + m * 2, CARD_H + m * 2, RADIUS + m);
+  const inner = roundedShape(CARD_W - 0.008, CARD_H - 0.008, RADIUS - 0.004);
+  outer.holes.push(new THREE.Path(inner.getPoints(CORNER_SEGMENTS).reverse()));
+  return (border = new THREE.ShapeGeometry(outer, CORNER_SEGMENTS));
+}
+
+const borderBase = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: false,
+  uniforms: {
+    uTime: { value: 0 },
+    uOpacity: { value: 0 },
+    uHalf: { value: new THREE.Vector2(CARD_W / 2, CARD_H / 2) },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vPos;
+    void main() {
+      vPos = position.xy;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  // a gold edge with two bright sparks chasing each other around it
+  fragmentShader: /* glsl */ `
+    uniform float uTime;
+    uniform float uOpacity;
+    uniform vec2 uHalf;
+    varying vec2 vPos;
+    void main() {
+      float a = atan(vPos.y / uHalf.y, vPos.x / uHalf.x) / 6.2831853 + 0.5;
+      float x = fract(a - uTime * 0.42);
+      float d = min(min(x, 1.0 - x), abs(x - 0.5));
+      float spark = exp(-d * d * 260.0);
+      float r = max(abs(vPos.x) / uHalf.x, abs(vPos.y) / uHalf.y);
+      float edge = 1.0 - smoothstep(1.03, 1.14, r);
+      vec3 gold = vec3(1.0, 0.78, 0.1);
+      vec3 hot = vec3(1.0, 0.98, 0.85);
+      gl_FragColor = vec4(mix(gold, hot, spark), uOpacity * edge * (0.6 + 0.4 * spark));
+    }`,
+});
+
+/** One per card (each fades in and out on its own); they all share one shader program. */
+export function borderMaterial(): THREE.ShaderMaterial {
+  return borderBase.clone();
+}
+
 export function cardMaterials(card: Pick<Card, "kind" | "value" | "color"> | null, tint: Color | null = null): THREE.Material[] {
   return [card ? faceMaterial(card, tint) : backMaterial(), backMaterial(), edgeMaterial()];
 }

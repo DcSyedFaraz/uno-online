@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { UNO_CATCH_GRACE_MS, UNO_WINDOW_MS } from "@/engine/uno";
 import { serverNow } from "@/client/clock";
-import { activeExtras, COLORS, FINAL_STRETCH_MS, type Color } from "@/engine";
+import { activeExtras, COLORS, FINAL_STRETCH_MS, teamColor, type Color, type PublicView } from "@/engine";
 import { BRAND } from "@/brand";
 import { playCard, sendAction } from "@/client/actions";
 import { playerName, useGame } from "@/client/store/game-store";
@@ -18,6 +18,7 @@ import { useScene } from "@/scene/sceneStore";
 import { shoutNow } from "@/scene/anim/director";
 import { sortHand, useUi, type Quality, type RoomTheme } from "./uiStore";
 import { CARD_HELP, RULE_HELP } from "./ruleInfo";
+import { anchors } from "./TableFx";
 
 // ── top bar ──
 
@@ -462,6 +463,7 @@ export function BottomHud() {
   const color = pub.currentColor ? COLOR_HEX[pub.currentColor] : COLOR_HEX.wild;
   const selectedPlayable = selected && (priv.playable.includes(selected) || priv.jumpIn.includes(selected));
   const mustShout = priv.canCallUno && (me?.cardCount ?? 0) === 1;
+  const myColor = you ? teamColor(pub, you) : null;
   const shouted = !!me?.saidUno && me.cardCount === 1;
 
   const btn = "btn font-display text-[13px] tracking-wide py-2.5 px-3.5 sm:px-4 sm:text-sm short:py-2 short:text-xs";
@@ -471,13 +473,20 @@ export function BottomHud() {
       {/* your badge: bottom-left corner, beside the hand */}
       {me && (
         <div className={`${corner} pointer-events-none left-[max(0.75rem,env(safe-area-inset-left))] flex flex-col items-center gap-1`}>
+          <UpNext pub={pub} you={you} />
           <div
+            ref={(el) => {
+              anchors.you = el;
+              anchors.youId = el ? you : null;
+            }}
             className={`relative grid place-items-center rounded-full ${small ? "text-2xl" : "text-[28px]"}`}
             style={{
               width: badge,
               height: badge,
               background: "radial-gradient(circle at 35% 30%, #ffffff, #d4e4ff)",
-              boxShadow: myTurn ? TURN_SHADOW : "0 0 0 3px #ffffff, 0 4px 0 rgba(10,40,110,0.35)",
+              boxShadow: myTurn
+                ? TURN_SHADOW
+                : `0 0 0 3px #ffffff, ${myColor ? `0 0 0 6px ${myColor}, ` : ""}0 4px 0 rgba(10,40,110,0.35)`,
             }}
           >
             {myTurn && <TurnPing />}
@@ -591,6 +600,42 @@ export function BottomHud() {
 
 // ── turn status: a gold screen frame on your turn (the turn pill lives in the bottom HUD) ──
 
+/** The next player in the direction of play (skipping anyone who's out). */
+function nextUp(pub: PublicView): string | null {
+  const n = pub.players.length;
+  const at = pub.players.findIndex((p) => p.id === pub.turnPlayerId);
+  if (at < 0) return null;
+  for (let k = 1; k < n; k++) {
+    const p = pub.players[(((at + k * pub.direction) % n) + n) % n];
+    if (p.status === "active") return p.id;
+  }
+  return null;
+}
+
+/** "UP NEXT" over your badge while the player before you is moving, with a soft heads-up chime. */
+function UpNext({ pub, you }: { pub: PublicView; you: string | null }) {
+  const next = pub.phase === "playing" && pub.turnPlayerId !== you && nextUp(pub) === you;
+  const turnId = pub.turnPlayerId;
+  useEffect(() => {
+    if (next) playSfx("next");
+  }, [next, turnId]);
+  return (
+    <AnimatePresence>
+      {next && (
+        <motion.div
+          initial={{ opacity: 0, y: 6, scale: 0.8 }}
+          animate={{ opacity: 1, y: 0, scale: [1, 1.08, 1] }}
+          exit={{ opacity: 0, y: 6, scale: 0.8 }}
+          transition={{ scale: { repeat: Infinity, duration: 1.2 } }}
+          className="font-display rounded-full bg-[#1d5fd6] px-2 py-0.5 text-[10px] font-black tracking-wider text-white ring-2 ring-white shadow-[0_2px_0_#133f99]"
+        >
+          UP NEXT
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 export function TurnStatus() {
   const pub = useGame((s) => s.pub);
   const you = useGame((s) => s.you);
@@ -599,7 +644,7 @@ export function TurnStatus() {
   // gold, not the card color: a red frame vanished against the red stage
   return (
     <div
-      className="pointer-events-none fixed inset-0 z-20 transition-opacity duration-500"
+      className={`pointer-events-none fixed inset-0 z-20 transition-opacity duration-500 ${myTurn ? "turn-frame" : ""}`}
       style={{ opacity: myTurn ? 1 : 0, boxShadow: "inset 0 0 60px -12px rgba(255,207,26,0.95), inset 0 0 0 4px #ffcf1a" }}
     />
   );

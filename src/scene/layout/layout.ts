@@ -45,8 +45,8 @@ export interface Seat {
   yaw: number;
 }
 
-export function ellipsePoint(d: TableDims, angle: number, k: number, y = 0): THREE.Vector3 {
-  return new THREE.Vector3(Math.cos(angle) * d.rx * k, y, Math.sin(angle) * d.rz * k);
+export function ellipsePoint(d: TableDims, angle: number, k: number, y = 0, out = new THREE.Vector3()): THREE.Vector3 {
+  return out.set(Math.cos(angle) * d.rx * k, y, Math.sin(angle) * d.rz * k);
 }
 
 /**
@@ -271,8 +271,11 @@ export function handSlot(n: number, i: number, hp: HandParams, lift: number, out
   out.scale = s;
 }
 
+/** How far playable cards rise out of the hand on your turn. */
+export const PLAYABLE_LIFT = 0.17;
+
 /** Screen pixels from the bottom edge to the top of the hand (with a playable card's lift). */
 export function handTopPx(hp: HandParams, heightPx: number) {
   const { vh, s, margin } = handMetrics(hp);
-  return ((margin + CARD_H * s + 0.15 * s) / vh) * heightPx;
+  return ((margin + CARD_H * s + PLAYABLE_LIFT * s) / vh) * heightPx;
 }

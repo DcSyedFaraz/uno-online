@@ -11,6 +11,8 @@ import { useRoom } from "@/client/realtime/useRoom";
 import { useGame } from "@/client/store/game-store";
 import { unlockAudio } from "@/audio/sound";
 import { useNeedsRotate } from "@/client/device";
+import { PileFxLayer, YourTurnBanner } from "./TableFx";
+import { EmoteLayer, ThrowLayer, ThrowMenu } from "./Fun";
 import { ActionCallout, BottomHud, ColorPicker, FullscreenButton, RulesSheet, SettingsSheet, ShoutBanner, SwapHint, Toasts, TopBar, TurnStatus, useKeyboard } from "./GameHud";
 import { useStoredProfile } from "./Landing";
 import { Lobby } from "./Lobby";
@@ -77,6 +79,11 @@ function InGame() {
       <TurnStatus />
       <BottomHud />
       <ActionCallout />
+      <PileFxLayer />
+      <YourTurnBanner />
+      <EmoteLayer />
+      <ThrowLayer />
+      <ThrowMenu />
       <ShoutBanner />
       <SwapHint />
       <ColorPicker />

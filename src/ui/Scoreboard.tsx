@@ -25,6 +25,9 @@ function CountUp({ to }: { to: number }) {
   return <span ref={ref}>0</span>;
 }
 
+/** Long enough to see the last card land and the "OUT!" moment before the results cover the table. */
+const SCOREBOARD_DELAY = 3200;
+
 export function Scoreboard() {
   const pub = useGame((s) => s.pub);
   const you = useGame((s) => s.you);
@@ -34,7 +37,7 @@ export function Scoreboard() {
   // let the last card land before covering the table
   useEffect(() => {
     if (!key) return;
-    const t = setTimeout(() => setReadyFor(key), 1300);
+    const t = setTimeout(() => setReadyFor(key), SCOREBOARD_DELAY);
     return () => clearTimeout(t);
   }, [key]);
   const show = key !== null && readyFor === key;

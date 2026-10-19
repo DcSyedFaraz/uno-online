@@ -4,11 +4,11 @@ import * as THREE from "three";
 import { BRAND } from "@/brand";
 import { playSfx, playVoice, type VoiceLine } from "@/audio/sound";
 import type { Card, CardKind, GameEvent, PublicView } from "@/engine";
-import { isDrawCard, isWild } from "@/engine/cards";
+import { drawValue, isDrawCard, isWild } from "@/engine/cards";
 import { onBatch, playerName, useGame, type Batch } from "@/client/store/game-store";
 import { CARD_H } from "../cards/cardGeometry";
 import { computeSeats, flatFaceDown, flatFaceUp, PILE_SCALE, SEAT_CARD_SCALE, seatHandCenter, standingBack, tableDims } from "../layout/layout";
-import { actorTransforms, COLOR_HEX, sceneRef, spawnHints, useScene, wildColors, type FaceSpec, type Ghost } from "../sceneStore";
+import { actorTransforms, COLOR_HEX, sceneRef, spawnHints, useScene, wildColors, type FaceSpec, type Ghost, type PileFx } from "../sceneStore";
 import { describeMove } from "./callout";
 
 /**
@@ -80,6 +80,42 @@ function myHandGhosts(ids: string[], toPid: string, delay: number) {
       duration: 650,
     });
   });
+}
+
+/** The big animation over the pile for an action or wild card (null for number cards). */
+function pileFxFor(card: Card, ev: GameEvent[], next: PublicView): Omit<PileFx, "id"> | null {
+  if (card.kind === "number") return null;
+  const color = card.color ? COLOR_HEX[card.color] : COLOR_HEX.wild;
+  let picked: string | null = null;
+  let direction: 1 | -1 = next.direction;
+  let victim: string | null = null;
+  const skipped: string[] = [];
+  for (const e of ev) {
+    if (e.t === "color") picked = COLOR_HEX[e.color];
+    if (e.t === "reverse") direction = e.direction;
+    if (e.t === "skip") skipped.push(...e.pids);
+    if (e.t === "draw" && e.reason === "penalty" && !victim) victim = e.pid;
+  }
+  const base = { color, picked, direction, label: "", targets: [] as string[] };
+  switch (card.kind) {
+    case "skip":
+      return { ...base, kind: "skip", targets: skipped };
+    case "skip_all":
+      return { ...base, kind: "skip_all", label: "ALL" };
+    case "reverse":
+      return { ...base, kind: "reverse", targets: skipped };
+    case "discard_all":
+      return { ...base, kind: "discard_all", label: "ALL" };
+    case "wild":
+      return { ...base, kind: "wild", color: picked ?? color };
+    case "wild_roulette":
+      return { ...base, kind: "roulette", label: "?", targets: next.turnPlayerId ? [next.turnPlayerId] : [] };
+    default: {
+      // every draw card; the pending victim when it's waiting to be stacked
+      const target = victim ?? (next.turn.kind === "stack" ? next.turnPlayerId : null);
+      return { ...base, kind: "draw", label: `+${drawValue(card)}`, color: picked ?? color, targets: target ? [target] : [] };
+    }
+  }
 }
 
 function colorOf(card: Card): string {
@@ -158,6 +194,8 @@ export function choreograph(b: Batch) {
         if (cardVoice) playVoice(cardVoice, land);
         if (e.jumpIn) scene.addSeatFx(e.pid, "JUMP-IN!", "gold", true, t);
         if (isDrawCard(e.card)) sceneRef.shake = Math.max(sceneRef.shake, e.card.kind === "wild10" ? 1 : 0.35);
+        const fx = pileFxFor(e.card, ev, next);
+        if (fx) scene.addPileFx(fx, land - 40);
         t += 160;
         break;
       }
@@ -304,11 +342,42 @@ export function choreograph(b: Batch) {
         scene.addSeatFx(e.pid, "TIME!", "white", false, t);
         break;
       case "round_over": {
-        const won = e.winnerId === you;
-        scene.celebrate(won);
-        playSfx(won ? "win" : "lose", t + 300);
+        // in team play your partner going out is your win too
+        const me = next.players.find((p) => p.id === you);
+        const won = !!e.winnerId && (e.winnerId === you || me?.partnerId === e.winnerId);
+        // let the last card land and be seen before the party (the scoreboard waits longer still)
+        const at = t + 650;
+        setTimeout(() => useScene.getState().celebrate(won), at);
+        playSfx(won ? "win" : "lose", at + 200);
+        if (e.winnerId && !e.timeUp) {
+          const last = findPlayedCard(ev);
+          const winner = name(e.winnerId);
+          const seat = sceneRef.seats.get(e.winnerId);
+          if (seat) scene.addPulse("shockwave", seat.chip, "#ffcf1a", at);
+          scene.showCallout(
+            {
+              icon: "🏆",
+              title: e.winnerId === you ? "YOU'RE OUT!" : "OUT!",
+              sub: `${winner} ${e.winnerId === you ? "played your" : "played their"} last card`,
+              color: last ? colorOf(last) : "#ffcf1a",
+            },
+            at,
+          );
+        }
         break;
       }
+      case "player_offline":
+        if (e.pid !== you) game.toast(`${name(e.pid)} lost connection, a bot is playing for them`, "warn");
+        break;
+      case "spectator_joined":
+        if (e.pid !== you) game.toast(`${next.spectators.find((w) => w.id === e.pid)?.name ?? "Someone"} is watching`, "info");
+        break;
+      case "team_invite":
+        if (e.to === you) game.toast(`${name(e.from)} wants to team up`, "good");
+        break;
+      case "team_paired":
+        if (e.a === you || e.b === you) game.toast(`You're teamed up with ${name(e.a === you ? e.b : e.a)}`, "good");
+        break;
       case "player_joined":
         if (e.pid !== you) game.toast(`${name(e.pid)} joined`, "info");
         break;
@@ -340,11 +409,12 @@ export function choreograph(b: Batch) {
     scene.showCallout(callout, byOther ? 380 : 180);
   }
 
-  // your turn cue
+  // your turn cue: banner, chime and a buzz
   if (next.phase === "playing" && next.turnPlayerId === you && prev?.turnPlayerId !== you) {
     playSfx("turn", t + 150);
+    scene.markYourTurn(t + 120);
     try {
-      navigator.vibrate?.(25);
+      setTimeout(() => navigator.vibrate?.([30, 60, 40]), t + 120);
     } catch {}
   }
 }
@@ -359,6 +429,11 @@ export function shoutNow(you: string) {
 }
 function recentOwnShout() {
   return performance.now() - ownShoutAt < 4000;
+}
+
+function findPlayedCard(ev: GameEvent[]): Card | undefined {
+  for (const e of ev) if (e.t === "play") return e.card;
+  return undefined;
 }
 
 function findPlayedId(ev: GameEvent[]): string | undefined {

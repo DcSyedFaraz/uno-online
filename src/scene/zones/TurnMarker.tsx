@@ -1,10 +1,12 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { playSfx } from "@/audio/sound";
 import { useGame } from "@/client/store/game-store";
-import { sceneRef } from "../sceneStore";
+import { ellipsePoint } from "../layout/layout";
+import { sceneRef, useScene } from "../sceneStore";
 
 let spotTex: THREE.CanvasTexture | null = null;
 
@@ -72,5 +74,85 @@ export function TurnMarker() {
       <planeGeometry args={[2.6, 1.7]} />
       <meshBasicMaterial map={tex ?? undefined} color="#fff6c8" transparent opacity={0} depthWrite={false} />
     </mesh>
+  );
+}
+
+const BATON_MS = 480;
+const TRAIL = 7;
+const TAU = Math.PI * 2;
+const mod = (a: number) => ((a % TAU) + TAU) % TAU;
+const ease = (p: number) => (p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2);
+const at = new THREE.Vector3();
+
+/**
+ * The hand-off between turns: a glowing comet runs along the table edge from the player who
+ * just moved to the next one, in the direction of play, and lands with a ripple.
+ */
+export function TurnBaton() {
+  const turnPid = useGame((s) => (s.pub?.phase === "playing" ? s.pub.turnPlayerId : null));
+  const direction = useGame((s) => s.pub?.direction ?? 1);
+  const group = useRef<THREE.Group>(null);
+  const prev = useRef<string | null>(null);
+  const run = useRef<{ a0: number; delta: number; start: number; to: string; landed: boolean } | null>(null);
+  const head = useMemo(() => new THREE.MeshBasicMaterial({ color: "#fff3a8", transparent: true, depthWrite: false }), []);
+  const tail = useMemo(
+    () => Array.from({ length: TRAIL }, (_, i) => new THREE.MeshBasicMaterial({ color: "#ffcf1a", transparent: true, opacity: 0.75 * (1 - i / TRAIL), depthWrite: false })),
+    [],
+  );
+
+  useEffect(() => {
+    const from = prev.current;
+    prev.current = turnPid;
+    if (!from || !turnPid || from === turnPid) return;
+    const a = sceneRef.seats.get(from);
+    const b = sceneRef.seats.get(turnPid);
+    if (!a || !b) return;
+    // direction 1 runs clockwise on screen (increasing angle): the next player is on your left
+    const delta = direction > 0 ? mod(b.angle - a.angle) : -mod(a.angle - b.angle);
+    if (Math.abs(delta) < 0.05) return;
+    run.current = { a0: a.angle, delta, start: performance.now(), to: turnPid, landed: false };
+    playSfx("baton");
+  }, [turnPid, direction]);
+
+  useFrame(() => {
+    const g = group.current;
+    const r = run.current;
+    if (!g) return;
+    if (!r) {
+      g.visible = false;
+      return;
+    }
+    const p = (performance.now() - r.start) / BATON_MS;
+    if (p >= 1 && !r.landed) {
+      r.landed = true;
+      const seat = sceneRef.seats.get(r.to);
+      if (seat) useScene.getState().addPulse("shockwave", seat.fan.clone().setY(0.03), "#ffcf1a");
+    }
+    if (p > 1.35) {
+      run.current = null;
+      g.visible = false;
+      return;
+    }
+    g.visible = true;
+    g.children.forEach((m, i) => {
+      // the head leads, the trail follows a little behind and fades out after landing
+      const q = Math.min(1, Math.max(0, p - i * 0.045));
+      ellipsePoint(sceneRef.dims, r.a0 + r.delta * ease(q), 0.9, 0.09, at);
+      m.position.copy(at);
+      m.visible = p - i * 0.045 > 0 && p - i * 0.045 < 1.3;
+    });
+  });
+
+  return (
+    <group ref={group} visible={false} renderOrder={1}>
+      <mesh material={head} scale={1}>
+        <sphereGeometry args={[0.16, 16, 12]} />
+      </mesh>
+      {tail.map((m, i) => (
+        <mesh key={i} material={m} scale={1 - (i + 1) / (TRAIL + 2)}>
+          <sphereGeometry args={[0.14, 12, 8]} />
+        </mesh>
+      ))}
+    </group>
   );
 }

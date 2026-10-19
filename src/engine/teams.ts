@@ -8,6 +8,25 @@ import type { Ctx, GameState, PlayerState } from "./types";
  */
 
 export const TEAM_SIZE = 2;
+
+/** One colour per team (never a card colour, so it can't be mistaken for one). */
+export const TEAM_COLORS = ["#16c7e0", "#ff8a1f", "#ff4fa3", "#8fdc3b", "#a07bff"] as const;
+
+/** A player's team colour in team play (teams are numbered by seat order), or null. */
+export function teamColor(view: { settings: { teamPlay?: boolean }; players: { id: string; partnerId: string | null }[] }, pid: string): string | null {
+  if (!view.settings.teamPlay) return null;
+  const order: string[] = [];
+  for (const p of view.players) {
+    if (!p.partnerId) continue;
+    const key = [p.id, p.partnerId].sort().join("+");
+    if (!order.includes(key)) order.push(key);
+  }
+  const me = view.players.find((p) => p.id === pid);
+  if (!me?.partnerId) return null;
+  const i = order.indexOf([me.id, me.partnerId].sort().join("+"));
+  return i < 0 ? null : TEAM_COLORS[i % TEAM_COLORS.length];
+}
+
 export const MIN_TEAM_PLAYERS = 4;
 
 export function teamPlay(state: GameState): boolean {

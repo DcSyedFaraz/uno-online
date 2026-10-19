@@ -26,7 +26,18 @@ export type Sfx =
   | "error"
   | "swap"
   | "chat"
-  | "out";
+  | "out"
+  // turn cues
+  | "next"
+  | "baton"
+  // emotes and things thrown at players
+  | "emote"
+  | "whoosh"
+  | "splat"
+  | "pop"
+  | "boom"
+  | "clink"
+  | "smooch";
 
 /**
  * One audio engine per page, kept on globalThis so a hot-reloaded copy of this module
@@ -261,6 +272,41 @@ export function playSfx(name: Sfx, delayMs = 0) {
     case "out":
       tone("sawtooth", 400, 60, t, 0.6, 0.1);
       hiss(t, 0.5, 0.2, "lowpass", 2000, 200);
+      break;
+    case "next":
+      // a soft "heads up" two-note chime, quieter than the your-turn one
+      tone("sine", 784, 784, t, 0.28, 0.08);
+      tone("sine", 1046, 1046, t + 0.11, 0.32, 0.07);
+      break;
+    case "baton":
+      hiss(t, 0.22, 0.09, "bandpass", 700, 2600, 1.4);
+      break;
+    case "emote":
+      tone("sine", 520, 1040, t, 0.12, 0.08);
+      break;
+    case "whoosh":
+      hiss(t, 0.32, 0.16, "bandpass", 500, 2400, 1.1);
+      break;
+    case "splat":
+      hiss(t, 0.18, 0.5, "lowpass", 1400, 200, 0.8);
+      hiss(t, 0.06, 0.3, "bandpass", 2600, 900, 1.2);
+      tone("sine", 160, 60, t, 0.16, 0.25);
+      break;
+    case "pop":
+      tone("sine", 600, 1500, t, 0.08, 0.14);
+      hiss(t, 0.04, 0.12, "highpass", 3000, 3000, 0.7);
+      break;
+    case "boom":
+      tone("sine", 110, 35, t, 0.7, 0.55);
+      hiss(t, 0.6, 0.45, "lowpass", 1800, 120, 0.7);
+      break;
+    case "clink":
+      tone("triangle", 2093, 2093, t, 0.25, 0.1);
+      tone("triangle", 2637, 2637, t + 0.05, 0.3, 0.08);
+      break;
+    case "smooch":
+      hiss(t, 0.09, 0.25, "bandpass", 1800, 600, 2);
+      tone("sine", 900, 300, t + 0.02, 0.09, 0.08);
       break;
   }
 }
